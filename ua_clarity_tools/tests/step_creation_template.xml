@@ -1,0 +1,9 @@
+<stp:step-creation xmlns:stp="http://genologics.com/ri/step">
+    <configuration uri="https://uagc-dev.claritylims.com/api/v2/configuration/protocols/75/steps/339">Sample Storage</configuration>
+    <container-type>Freezer Box 9x9</container-type>
+    <inputs>
+        {% for uri in input_uris %}
+            <input uri="{{ uri }}"/>
+        {% endfor %}
+    </inputs>
+</stp:step-creation>

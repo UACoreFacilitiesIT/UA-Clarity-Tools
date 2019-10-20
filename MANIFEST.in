@@ -1,0 +1,2 @@
+include ua_clarity_tools/batch_artifact_update_template.xml
+include ua_clarity_tools/routing_template.xml

@@ -1,0 +1,7 @@
+<rt:routing xmlns:rt="http://genologics.com/ri/routing">
+    <{{ method }} stage-uri="{{ stage_uri }}">
+        {% for uri in artifact_uris %}
+            <artifact uri="{{ uri }}"/>
+        {% endfor %}
+    </{{ method }}>
+</rt:routing>
