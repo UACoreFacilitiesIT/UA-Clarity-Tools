@@ -1,3 +1,4 @@
+import os
 import re
 import unittest
 import string
@@ -16,7 +17,9 @@ CLARITY_TOOLS = None
 
 
 def setUpModule():
-    with open("lims_dev_creds.json", 'r') as file:
+    creds_path = (os.path.join(
+        os.path.split(__file__)[0], "lims_dev_creds.json"))
+    with open(creds_path, 'r') as file:
         contents = file.read()
 
     creds = json.loads(contents)
@@ -144,9 +147,11 @@ class TestClarityTools(unittest.TestCase):
 
 class TestStepTools(unittest.TestCase):
     def setUp(self):
+        creds_path = (os.path.join(
+            os.path.split(__file__)[0], "lims_dev_creds.json"))
         # NOTE: Create a json file named "lims_dev_creds" with values for the
         # api 'username', 'password', and 'step_uri'.
-        with open("lims_dev_creds.json", 'r') as file:
+        with open(creds_path, 'r') as file:
             contents = file.read()
 
         creds = json.loads(contents)
@@ -413,7 +418,9 @@ class TestStepTools(unittest.TestCase):
 
 def _post_project(prj=None):
     """Method that will post a project and return an api_types.Project."""
-    with open("post_project_template.xml", 'r') as file:
+    template_path = (os.path.join(
+        os.path.split(__file__)[0], "post_project_template.xml"))
+    with open(template_path, 'r') as file:
         template = Template(file.read())
         response_xml = template.render(
             name=f"Project_TEST_{datetime.now()}",
@@ -443,7 +450,9 @@ def _post_project(prj=None):
 
 def _post_con(name):
     """Method that will post a container and return a request."""
-    with open("post_container_template.xml", 'r') as file:
+    template_path = (os.path.join(
+        os.path.split(__file__)[0], "post_container_template.xml"))
+    with open(template_path, 'r') as file:
         template = Template(file.read())
         response_xml = template.render(con_name=name)
 
@@ -453,12 +462,13 @@ def _post_con(name):
 
 def _batch_post_samples(samples, prj_info):
     """Takes a list of Samples and projet info and posts the samples."""
-
+    template_path = (os.path.join(
+        os.path.split(__file__)[0], "post_samples_template.xml"))
     sample_xmls = list()
 
     # Construct each of the sample xml objects.
     for sample in samples:
-        with open("post_samples_template.xml", 'r') as file:
+        with open(template_path, 'r') as file:
             template = Template(file.read())
             smp_xml = template.render(
                 name=sample.name,
@@ -470,8 +480,10 @@ def _batch_post_samples(samples, prj_info):
         smp_xml = smp_xml.replace('&', "&amp;")
         sample_xmls.append(smp_xml)
 
+    batch_template_path = (os.path.join(
+        os.path.split(__file__)[0], "post_samples_batch_template.xml"))
     # Compile all of the sample xmls into a batch sample xml object.
-    with open("post_samples_batch_template.xml", 'r') as file:
+    with open(batch_template_path, 'r') as file:
         template = Template(file.read())
         batch_xml = template.render(
             samples='\n'.join(sample_xmls))

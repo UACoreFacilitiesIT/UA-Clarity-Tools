@@ -346,6 +346,9 @@ class StepTools():
         # Get URI for target artifacts.
         for iomap in step_soup.find_all("input-output-map"):
             target = iomap.find(stream)
+            # If there are no {stream}s, skip this iomap soup.
+            if target is None:
+                continue
             # Only add perInput output uri's.
             if stream == "output":
                 if target["output-generation-type"] == "PerInput":
@@ -354,7 +357,10 @@ class StepTools():
             else:
                 art_uris.append(target["uri"])
 
-        batch_artifacts = BeautifulSoup(self.api.get(art_uris), "xml")
+        if art_uris:
+            batch_artifacts = BeautifulSoup(self.api.get(art_uris), "xml")
+        else:
+            return art_uris
 
         # Store all artifact data.
         artifacts = list()
