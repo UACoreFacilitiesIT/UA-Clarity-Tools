@@ -424,7 +424,8 @@ def _post_project(prj=None):
         template = Template(file.read())
         response_xml = template.render(
             name=f"Project_TEST_{datetime.now()}",
-            open_date=str(datetime.today().date()))
+            open_date=str(datetime.today().date()),
+            res_uri=f"{CLARITY_TOOLS.api.host}researchers/1")
 
     res = api_types.Researcher(
             "System",
@@ -454,7 +455,9 @@ def _post_con(name):
         os.path.split(__file__)[0], "post_container_template.xml"))
     with open(template_path, 'r') as file:
         template = Template(file.read())
-        response_xml = template.render(con_name=name)
+        response_xml = template.render(
+            con_name=name,
+            type_ur=f"{CLARITY_TOOLS.api.host}containertypes/1")
 
     return CLARITY_TOOLS.api.post(
         f"{CLARITY_TOOLS.api.host}containers", response_xml)

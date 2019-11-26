@@ -187,7 +187,16 @@ class ClarityTools():
             else:
                 [tag.decompose() for tag in art.find_all("reagent-label")]
 
-        self.api.post(f"{self.api.host}artifacts/batch/update", art_soup)
+        # Use Jinja to create the batch update xml.
+        template_path = (os.path.join(
+            os.path.split(__file__)[0], "batch_artifact_update_template.xml"))
+
+        with open(template_path, "r") as file:
+            template = Template(file.read())
+            update_xml = template.render(artifacts=[
+                str(tag) for tag in art_soup.find_all("art:artifact")])
+
+        self.api.post(f"{self.api.host}artifacts/batch/update", update_xml)
 
     def step_router(self, wf_name, dest_stage_name, art_uris, action="assign"):
         """Move samples from current step to a destination step.

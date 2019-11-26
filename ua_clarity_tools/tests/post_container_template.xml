@@ -1,4 +1,4 @@
 <con:container xmlns:con="http://genologics.com/ri/container">
     <name>{{ con_name }}</name>
-    <type uri="http://uagc-dev/api/v2/containertypes/1" name="96 well plate"/>
+    <type uri="{{ type_uri }}" name="96 well plate"/>
 </con:container>
