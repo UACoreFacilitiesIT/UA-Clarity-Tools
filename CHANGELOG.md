@@ -3,7 +3,12 @@
 All notable changes to this project can be found here.
 The format of this changelog is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-#### 2019/10/19 [1.0.0](https://github.com/UACoreFacilitiesIT/UA-Clarity-Tools)
+#### 2019/11/26 [1.1.0](https://github.com/UACoreFacilitiesIT/UA-Clarity-Tools)
+
+- Removed hardcoded Api hosts
+- If no uri's are found for a combination of arguments, get_artifacts returns an empty list. Prior it would error.
+
+#### 2019/10/28 [1.0.0](https://github.com/UACoreFacilitiesIT/UA-Clarity-Tools/commit/3c10f9bbc8125b68b1d118ad9be2f1a9c264adf1)
 
 Get_artifacts now returns an empty list if it can't find arts with the given arguments.
 
