@@ -33,6 +33,8 @@ def setUpModule():
 
         creds = json.loads(contents)
 
+    print(creds)
+
     global CLARITY_TOOLS
 
     CLARITY_TOOLS = ua_clarity_tools.ClarityTools(
