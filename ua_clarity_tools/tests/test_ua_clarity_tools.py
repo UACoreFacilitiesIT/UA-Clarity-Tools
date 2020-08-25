@@ -17,12 +17,21 @@ CLARITY_TOOLS = None
 
 
 def setUpModule():
-    creds_path = (os.path.join(
-        os.path.split(__file__)[0], "lims_dev_creds.json"))
-    with open(creds_path, 'r') as file:
-        contents = file.read()
+    # If running as git test.
+    if os.getenv("HOST", ''):
+        creds = dict()
+        creds["host"] = os.getenv("HOST", '')
+        creds["password"] = os.getenv("PASSWORD", '')
+        creds["username"] = os.getenv("USERNAME", '')
+        creds["step_uri"] = os.getenv("STEP_URI", '')
+    # If running locally.
+    else:
+        creds_path = (os.path.join(
+            os.path.split(__file__)[0], "lims_dev_creds.json"))
+        with open(creds_path, 'r') as file:
+            contents = file.read()
 
-    creds = json.loads(contents)
+        creds = json.loads(contents)
 
     global CLARITY_TOOLS
 
@@ -147,14 +156,21 @@ class TestClarityTools(unittest.TestCase):
 
 class TestStepTools(unittest.TestCase):
     def setUp(self):
-        creds_path = (os.path.join(
-            os.path.split(__file__)[0], "lims_dev_creds.json"))
-        # NOTE: Create a json file named "lims_dev_creds" with values for the
-        # api 'username', 'password', and 'step_uri'.
-        with open(creds_path, 'r') as file:
-            contents = file.read()
+        # If running in github.
+        if os.getenv("HOST", ''):
+            creds = dict()
+            creds["host"] = os.getenv("HOST", '')
+            creds["password"] = os.getenv("PASSWORD", '')
+            creds["username"] = os.getenv("USERNAME", '')
+            creds["step_uri"] = os.getenv("STEP_URI", '')
+        # If running locally.
+        else:
+            creds_path = (os.path.join(
+                os.path.split(__file__)[0], "lims_dev_creds.json"))
+            with open(creds_path, 'r') as file:
+                contents = file.read()
 
-        creds = json.loads(contents)
+            creds = json.loads(contents)
 
         # NOTE: For now, add a standard step type by hand in the web interface,
         # then add that step uri to your creds file.
