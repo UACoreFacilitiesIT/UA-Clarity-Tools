@@ -149,8 +149,6 @@ class TestStepTools(unittest.TestCase):
     def setUp(self):
         creds_path = (os.path.join(
             os.path.split(__file__)[0], "lims_dev_creds.json"))
-        # NOTE: Create a json file named "lims_dev_creds" with values for the
-        # api 'username', 'password', and 'step_uri'.
         with open(creds_path, 'r') as file:
             contents = file.read()
 
