@@ -306,9 +306,10 @@ class StepTools():
             self.args = self.setup_arguments()
 
         self.host = re.sub("v2/.*", "v2/", self.args.step_uri)
-        self.step_details = f"{self.args.step_uri}/details"
         self.api = ua_clarity_api.ClarityApi(
             self.host, self.args.username, self.args.password)
+        self.step_soup = BeautifulSoup(self.api.get(
+            f"{self.args.step_uri}/details"), "xml")
 
     def setup_arguments(self):
         """Incorporate EPP arguments into your StepTools object.
@@ -350,10 +351,9 @@ class StepTools():
         """
 
         art_uris = list()
-        step_soup = BeautifulSoup(self.api.get(self.step_details), "xml")
 
         # Get URI for target artifacts.
-        for iomap in step_soup.find_all("input-output-map"):
+        for iomap in self.step_soup.find_all("input-output-map"):
             target = iomap.find(stream)
             # If there are no {stream}s, skip this iomap soup.
             if target is None:
@@ -455,7 +455,6 @@ class StepTools():
             artifact_map (dict {namedtuple : [namedtuple]}):
                 Returns a dict of input namedtuple : all output namedtuples.
         """
-        step_soup = BeautifulSoup(self.api.get(self.step_details), "xml")
         # Make a dict with input_uri: input_artifact.
         input_uri_artifact = {
             art.uri: art for art in self.get_artifacts("input")}
@@ -480,7 +479,7 @@ class StepTools():
         ])
 
         artifact_map = dict()
-        for io_map in step_soup.find_all("input-output-map"):
+        for io_map in self.step_soup.find_all("input-output-map"):
             output_soup = io_map.find("output")
             if output_soup["output-generation-type"] == "PerInput":
                 input_uri = io_map.find("input")["uri"]
@@ -524,8 +523,7 @@ class StepTools():
                 initialization of that type.
         """
         art_uris = list()
-        step_soup = BeautifulSoup(self.api.get(self.step_details), "xml")
-        for iomap in step_soup.find_all("input-output-map"):
+        for iomap in self.step_soup.find_all("input-output-map"):
             art_soup = iomap.find(stream)
             art_uris.append(art_soup["uri"])
 
