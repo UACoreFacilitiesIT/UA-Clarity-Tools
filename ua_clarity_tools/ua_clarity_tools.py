@@ -10,21 +10,22 @@ from jinja2 import Template
 from ua_clarity_api import ua_clarity_api
 
 
-__author__ = "Stephen Stern, Archer Morgan, Rafael Lopez"
-__maintainer__ = "Stephen Stern"
-__email__ = "sterns1@email.arizona.edu"
+__author__ = ("Stephen Stern, Archer Morgan, Rafael Lopez,",
+    "Ryan Johannes-Bland, Etienne Thompson")
+__maintainer__ = "Ryan Johannes-Bland"
+__email__ = "rjjohannesbland@email.arizona.edu"
 
 
 class ClarityExceptions:
     """Holds custom Clarity Exceptions."""
     class TechnicianError(Exception):
-        """A Clarity user has made a mistake."""
+        """A Clarity user technician has made a mistake."""
 
     class EPPError(Exception):
-        """The EPP script is not correct."""
+        """The EPP script provided is not correct."""
 
     class CallError(Exception):
-        """This call wasn't well-formed."""
+        """This method call wasn't well-formed."""
 
 
 PreviousStepArtifact = namedtuple(
@@ -68,19 +69,30 @@ class Process:
 
 
 class ClarityTools():
-    """Tools that interact with Clarity without a step."""
+    """Tools that interact with Clarity without a step. These tools are general
+    use functions for when caller is not attached to a step and knows the
+    endpoints they want to perform work on. These methods are not limited by
+    the requirement to have a step uri.
+    """
     def __init__(self, host, username, password):
-        """Initialize ClarityTools with the appropriate clarity_api env."""
+        """Initializes a ClarityAPI object for use within method calls.
+
+        username and password should be strings representing your creds in the
+            clarity environment.
+        host should be a string representing the url of your clarity api
+            endpoint.
+        """
         self.api = ua_clarity_api.ClarityApi(host, username, password)
 
     def get_samples(self, uris):
-        """Return the samples information as a list of Sample data classes.
+        """Returns a list of Sample data classes with data populated from the
+        get responses of given clarity sample URIs.
 
         Arguments:
-            uris (list): List of Sample URIs.
+            uris (list): List of Sample URIs harvested from the clarity env.
 
         Returns:
-            samples (list): Returns a list of data classes.
+            samples (list): Returns a list of Sample data classes.
         """
         samples = list()
         samples_soup = BeautifulSoup(self.api.get(uris), "xml")
@@ -125,10 +137,11 @@ class ClarityTools():
         return samples
 
     def get_arts_from_samples(self, sample_uris):
-        """Return the artifact uris for the passed-in samples.
+        """Map sample uris to their respective artifact uris from clarity.
 
         Arguments:
-            sample_uris (list): The samples that have artifacts uris.
+            sample_uris (list): A list of sample uris. All sample uris given
+                must have at least one artifact uri in clarity.
 
         Returns:
             smp_art_uris (dict): The sample uri mapped to the artifact uri.
@@ -143,7 +156,18 @@ class ClarityTools():
         return smp_art_uris
 
     def get_udfs(self, target):
-        """Find all of the udfs with attach-to-name: target attributes."""
+        """Find all of the udfs with attach-to-name: target attributes.
+
+        Arguments:
+            target (str): A string representation of what attach-to-name
+                attributes to harvest.
+
+        Returns:
+            target_udfs (list): A list of all udf names for specified target.
+
+        Raises:
+            ClarityExceptions.CallError: If there are no target udfs found.
+        """
         udfs = self.api.get(
             "configuration/udfs", parameters={"attach-to-name": target})
         udf_soup = BeautifulSoup(udfs, "xml")
@@ -159,7 +183,7 @@ class ClarityTools():
         return target_udfs
 
     def set_reagent_label(self, limsid_label):
-        """Set reagent-label for all passed in artifacts.
+        """Set reagent-label of all artifact limsid keys to their mapped value.
 
         Arguments:
             limsid_label (dict {str: str}): maps limsid's to
@@ -199,13 +223,16 @@ class ClarityTools():
         self.api.post(f"{self.api.host}artifacts/batch/update", update_xml)
 
     def step_router(self, wf_name, dest_stage_name, art_uris, action="assign"):
-        """Move samples from current step to a destination step.
+        """Assign/unassign artifacts from current step to a destination step.
+            Assigning will move the artifacts to the given destination step.
+            Unassigning will remove the artifact from the step/queue, but does
+            not remove the artifact from the clarity environment
 
         Arguments:
             wf_name (string): The workflow name in which the destination
                 step is.
             dest_stage_name (string): The step name that is the destination
-                for the samples.
+                for the artifacts.
             art_uris (list): The list of artifact_uris to route to the
                 destination step.
             action (string): Either 'assign' or 'unassign', determining which
@@ -218,8 +245,8 @@ class ClarityTools():
         Raises:
             ClarityExceptions.CallError: If that workflow or stage isn't found.
             RuntimeError: If there was an exception raised while POSTing.
-            RuntimeError: If for some other, unknown reason the sample was not
-                routed.
+            RuntimeError: If for some other, unknown reason the artifact was
+                not routed.
         """
         # Remove the ?state information from the artifacts.
         artifact_uris = [uri.split('?')[0] for uri in art_uris]
@@ -294,10 +321,19 @@ class ClarityTools():
 
 
 class StepTools():
-    """Contains all of the information to do work on the current step."""
+    """Defines step specific methods which act upon a given step uri in
+        Clarity. This class can be instantiated directly or from a Clarity EPP
+        script.
+    """
 
     def __init__(self, username=None, password=None, step_uri=None):
-        """Initialize LimsTools with information to access step details."""
+        """Initialize LimsTools with information to access step details.
+
+        username and password should be strings representing your creds in the
+            clarity environment.
+        step_uri should be a string representing the step endpoint in your
+            clarity environment that you wish to perform work on.
+        """
         if username and password and step_uri:
             UserData = namedtuple(
                 "UserData", ["username", "password", "step_uri"])
@@ -428,7 +464,13 @@ class StepTools():
         return artifacts
 
     def get_process_data(self):
-        """Retrieves Process data for the current step."""
+        """Retrieves Process data for the current step, including technician,
+            uri, and udfs.
+
+        Returns:
+            process: a Process dataclass representing the process of the
+                current step.
+        """
         step_limsid = self.args.step_uri.split("/")[-1]
         process_uri = (f"{self.api.host}processes/{step_limsid}")
 
@@ -449,11 +491,17 @@ class StepTools():
         return process
 
     def get_artifact_map(self, uri_only=False):
-        """Return the artifacts with their relationships.
+        """Returns a map of input artifacts to output artifacts, either as uris
+            or as Artifact dataclasses. One input artifact can be mapped to a
+            list of their multiple output artifacts.
+
+        Arguments:
+            uri_only (boolean): This denotes whether to harvest this mapping as
+                uris or as namedtuples.
 
         Returns:
-            artifact_map (dict {namedtuple : [namedtuple]}):
-                Returns a dict of input namedtuple : all output namedtuples.
+            artifact_map (dict {input artifact: [output_artifact]}):
+                Returns a dict of input artifact : all output artifacts.
         """
         # Make a dict with input_uri: input_artifact.
         input_uri_artifact = {
@@ -501,10 +549,11 @@ class StepTools():
         return artifact_map
 
     def set_artifact_udf(self, sample_values, stream):
-        """Set UDFs for analytes in the current step.
+        """Set UDF values for analytes in the current step based on given
+            mapping.
 
         Arguments:
-            sampleValues (dict {str: [namedtuple]}): Maps sample limsid's to
+            sample_values (dict {str: [namedtuple]}): Maps sample limsid's to
                 a list of namedtuples called 'UDF' with the fields 'name',
                 'value'.
 
@@ -570,7 +619,8 @@ class StepTools():
 
     def get_artifacts_previous_step(
             self, dest_step, stream, art_smp_uris, step_soup, results=None):
-        """Return art_uris mapped to ancestor artifacts from a target step.
+        """Return artifact uris mapped to ancestor artifacts from a target
+            step.
 
         Arguments:
             dest_step (str): The name of the step where the ancestor
@@ -580,9 +630,8 @@ class StepTools():
             art_smp_uris (dict {str: str}): A dict that maps smp_uris to
                 passed in art_uris.
             step_soup: The step details soup for initial step.
-            Keyword Arguments:
-                results (dict): The empty dict that will eventually be
-                    returned with the desired artifacts from the dest_step.
+            results (dict): The empty dict that will eventually be returned
+                with the desired artifacts from the dest_step.
 
         Returns:
             results (dict {str: Artifact}): The dictionary that
