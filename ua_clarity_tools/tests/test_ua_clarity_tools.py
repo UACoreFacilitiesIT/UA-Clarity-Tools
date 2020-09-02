@@ -11,6 +11,7 @@ from jinja2 import Template
 from bs4 import BeautifulSoup
 from ua_clarity_tools import ua_clarity_tools
 from ua_clarity_tools import api_types
+import pdb
 
 
 CLARITY_TOOLS = None
@@ -321,6 +322,40 @@ class TestStepTools(unittest.TestCase):
                 "container")["uri"]
             assert out_arts[0].location == expected_output.find(
                 "location").find("value").text
+
+    def test_get_artifact_map_container_info_one_input_one_output(self):
+        test_map = self.step_tools.get_artifact_map(container_info=True)
+        in_out_uris = self._harvest_art_uris("map")
+
+        all_uris = list(in_out_uris.keys())
+        all_uris.extend(list(in_out_uris.values()))
+
+        arts_soup = BeautifulSoup(self.step_tools.api.get(all_uris), "xml")
+
+        for in_art, out_arts in test_map.items():
+            expected_input = arts_soup.find(
+                attrs={"uri": re.compile(f"{in_art.uri}.*")})
+            expected_output = arts_soup.find(
+                attrs={"uri": re.compile(f"{out_arts[0].uri}.*")})
+            pdb.set_trace()
+
+            assert in_out_uris[
+                in_art.uri] == expected_output["uri"].split('?')[0]
+
+            assert in_art.name == expected_input.find("name").text
+            assert in_art.container_uri == expected_input.find(
+                "container")["uri"]
+
+            assert in_art.location == expected_input.find(
+                "location").find("value").text
+
+            assert out_arts[0].name == expected_output.find("name").text
+            assert out_arts[0].container_uri == expected_output.find(
+                "container")["uri"]
+            assert out_arts[0].location == expected_output.find(
+                "location").find("value").text
+
+        assert True
 
     def test_get_artifact_map_uri_only_one_input_one_output(self):
         test_map = self.step_tools.get_artifact_map(uri_only=True)
