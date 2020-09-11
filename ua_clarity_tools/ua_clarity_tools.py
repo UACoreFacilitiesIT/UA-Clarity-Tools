@@ -504,12 +504,13 @@ class StepTools():
             artifact_map (dict {input artifact: [output_artifact]}):
                 Returns a dict of input artifact : all output artifacts.
         """
-        # Make a dict with input_uri: input_artifact.
-        input_uri_art = {
-            art.uri: art for art in self.get_artifacts("input")}
-        # Make a dict with output_uri: output_artifact.
-        output_uri_art = {
-            art.uri: art for art in self.get_artifacts("output")}
+        if not uri_only:
+            # Make a dict with input_uri: input_artifact.
+            input_uri_art = {
+                art.uri: art for art in self.get_artifacts("input")}
+            # Make a dict with output_uri: output_artifact.
+            output_uri_art = {
+                art.uri: art for art in self.get_artifacts("output")}
 
         # The container_name and container_type fields will always be None,
         # because it is not always necessary. They exist so that
@@ -561,6 +562,7 @@ class StepTools():
                             output_uri].container_name = output_con_name
                         output_uri_art[
                             output_uri].container_type = output_con_type
+
                     # Convert to hashable namedtuples excluding the UDF map.
                     input_art = Hashable_Artifact(
                         *(astuple(input_uri_art[input_uri])[:-1]))
@@ -569,6 +571,7 @@ class StepTools():
 
                     artifact_map.setdefault(input_art, list())
                     artifact_map[input_art].append(output_art)
+
         return artifact_map
 
     def set_artifact_udf(self, sample_values, stream):
@@ -641,7 +644,7 @@ class StepTools():
         self.api.post(f"{self.api.host}artifacts/batch/update", update_xml)
 
     def get_artifacts_previous_step(
-            self, dest_step, stream, art_smp_uris, step_soup, results=None):
+            self, dest_step, stream, art_smp_uris, step_soup, results=dict()):
         """Return artifact uris mapped to ancestor artifacts from a target
             step.
 
@@ -675,8 +678,6 @@ class StepTools():
                 went through the step separately from its fellows, this
                 will not work.
         """
-        results = results or dict()
-
         try:
             step_name = step_soup.find("configuration").text
         except AttributeError:

@@ -337,21 +337,32 @@ class TestStepTools(unittest.TestCase):
                 attrs={"uri": re.compile(f"{in_art.uri}.*")})
             expected_output = arts_soup.find(
                 attrs={"uri": re.compile(f"{out_arts[0].uri}.*")})
-            pdb.set_trace()
 
             assert in_out_uris[
                 in_art.uri] == expected_output["uri"].split('?')[0]
 
             assert in_art.name == expected_input.find("name").text
-            assert in_art.container_uri == expected_input.find(
-                "container")["uri"]
+            input_con_uri = expected_input.find("container")["uri"]
+            assert in_art.container_uri == input_con_uri
+
+            input_con_soup = BeautifulSoup(
+                self.step_tools.api.get(input_con_uri), "xml")
+            assert in_art.container_name == input_con_soup.find("name").text
+            assert in_art.container_type == input_con_soup.find("type")["name"]
 
             assert in_art.location == expected_input.find(
                 "location").find("value").text
 
             assert out_arts[0].name == expected_output.find("name").text
-            assert out_arts[0].container_uri == expected_output.find(
-                "container")["uri"]
+            output_con_uri = expected_output.find("container")["uri"]
+            assert out_arts[0].container_uri == output_con_uri
+            output_con_soup = BeautifulSoup(
+                self.step_tools.api.get(output_con_uri), "xml")
+            assert out_arts[0].container_name == output_con_soup.find(
+                "name").text
+            assert out_arts[0].container_type == output_con_soup.find(
+                "type")["name"]
+
             assert out_arts[0].location == expected_output.find(
                 "location").find("value").text
 
