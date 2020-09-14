@@ -10,7 +10,8 @@ from jinja2 import Template
 from ua_clarity_api import ua_clarity_api
 
 
-__author__ = ("Stephen Stern, Archer Morgan, Rafael Lopez,",
+__author__ = (
+    "Stephen Stern, Archer Morgan, Rafael Lopez,",
     "Ryan Johannes-Bland, Etienne Thompson")
 __maintainer__ = "Ryan Johannes-Bland"
 __email__ = "rjjohannesbland@email.arizona.edu"
@@ -490,7 +491,7 @@ class StepTools():
 
         return process
 
-    def get_artifact_map(self, uri_only=False):
+    def get_artifact_map(self, uri_only=False, container_info=False):
         """Returns a map of input artifacts to output artifacts, either as uris
             or as Artifact dataclasses. One input artifact can be mapped to a
             list of their multiple output artifacts.
@@ -503,12 +504,13 @@ class StepTools():
             artifact_map (dict {input artifact: [output_artifact]}):
                 Returns a dict of input artifact : all output artifacts.
         """
-        # Make a dict with input_uri: input_artifact.
-        input_uri_artifact = {
-            art.uri: art for art in self.get_artifacts("input")}
-        # Make a dict with output_uri: output_artifact.
-        output_uri_artifact = {
-            art.uri: art for art in self.get_artifacts("output")}
+        if not uri_only:
+            # Make a dict with input_uri: input_artifact.
+            input_uri_art = {
+                art.uri: art for art in self.get_artifacts("input")}
+            # Make a dict with output_uri: output_artifact.
+            output_uri_art = {
+                art.uri: art for art in self.get_artifacts("output")}
 
         # The container_name and container_type fields will always be None,
         # because it is not always necessary. They exist so that
@@ -533,19 +535,43 @@ class StepTools():
                 input_uri = io_map.find("input")["uri"]
                 output_uri = output_soup["uri"]
 
-                if uri_only:
+                if uri_only and not container_info:
                     artifact_map.setdefault(input_uri, list())
                     artifact_map[input_uri].append(output_uri)
 
                 else:
+                    if container_info:
+                        input_con_soup = BeautifulSoup(
+                            self.api.get(
+                                input_uri_art[input_uri].container_uri),
+                            "xml")
+                        input_con_name = input_con_soup.find("name").text
+                        input_con_type = input_con_soup.find("type")["name"]
+                        input_uri_art[
+                            input_uri].container_name = input_con_name
+                        input_uri_art[
+                            input_uri].container_type = input_con_type
+
+                        output_con_soup = BeautifulSoup(
+                            self.api.get(
+                                output_uri_art[output_uri].container_uri),
+                            "xml")
+                        output_con_name = output_con_soup.find("name").text
+                        output_con_type = output_con_soup.find("type")["name"]
+                        output_uri_art[
+                            output_uri].container_name = output_con_name
+                        output_uri_art[
+                            output_uri].container_type = output_con_type
+
                     # Convert to hashable namedtuples excluding the UDF map.
                     input_art = Hashable_Artifact(
-                        *(astuple(input_uri_artifact[input_uri])[:-1]))
+                        *(astuple(input_uri_art[input_uri])[:-1]))
                     output_art = Hashable_Artifact(
-                        *(astuple(output_uri_artifact[output_uri])[:-1]))
+                        *(astuple(output_uri_art[output_uri])[:-1]))
 
                     artifact_map.setdefault(input_art, list())
                     artifact_map[input_art].append(output_art)
+
         return artifact_map
 
     def set_artifact_udf(self, sample_values, stream):
@@ -618,7 +644,7 @@ class StepTools():
         self.api.post(f"{self.api.host}artifacts/batch/update", update_xml)
 
     def get_artifacts_previous_step(
-            self, dest_step, stream, art_smp_uris, step_soup, results=None):
+            self, dest_step, stream, art_smp_uris, step_soup, results=dict()):
         """Return artifact uris mapped to ancestor artifacts from a target
             step.
 
@@ -652,8 +678,6 @@ class StepTools():
                 went through the step separately from its fellows, this
                 will not work.
         """
-        results = results or dict()
-
         try:
             step_name = step_soup.find("configuration").text
         except AttributeError:

@@ -322,6 +322,53 @@ class TestStepTools(unittest.TestCase):
             assert out_arts[0].location == expected_output.find(
                 "location").find("value").text
 
+    def test_get_artifact_map_container_info_one_input_one_output(self):
+        test_map = self.step_tools.get_artifact_map(container_info=True)
+        in_out_uris = self._harvest_art_uris("map")
+
+        all_uris = list(in_out_uris.keys())
+        for value in in_out_uris.values():
+            if type(value) == list:
+                all_uris.extend(value)
+            else:
+                all_uris.append(value)
+
+        arts_soup = BeautifulSoup(self.step_tools.api.get(all_uris), "xml")
+
+        for in_art, out_arts in test_map.items():
+            expected_input = arts_soup.find(
+                attrs={"uri": re.compile(f"{in_art.uri}.*")})
+            expected_output = arts_soup.find(
+                attrs={"uri": re.compile(f"{out_arts[0].uri}.*")})
+
+            assert in_out_uris[
+                in_art.uri] == expected_output["uri"].split('?')[0]
+
+            assert in_art.name == expected_input.find("name").text
+            input_con_uri = expected_input.find("container")["uri"]
+            assert in_art.container_uri == input_con_uri
+
+            input_con_soup = BeautifulSoup(
+                self.step_tools.api.get(input_con_uri), "xml")
+            assert in_art.container_name == input_con_soup.find("name").text
+            assert in_art.container_type == input_con_soup.find("type")["name"]
+
+            assert in_art.location == expected_input.find(
+                "location").find("value").text
+
+            assert out_arts[0].name == expected_output.find("name").text
+            output_con_uri = expected_output.find("container")["uri"]
+            assert out_arts[0].container_uri == output_con_uri
+            output_con_soup = BeautifulSoup(
+                self.step_tools.api.get(output_con_uri), "xml")
+            assert out_arts[0].container_name == output_con_soup.find(
+                "name").text
+            assert out_arts[0].container_type == output_con_soup.find(
+                "type")["name"]
+
+            assert out_arts[0].location == expected_output.find(
+                "location").find("value").text
+
     def test_get_artifact_map_uri_only_one_input_one_output(self):
         test_map = self.step_tools.get_artifact_map(uri_only=True)
         in_out_uris = self._harvest_art_uris("map")
