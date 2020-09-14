@@ -8,10 +8,10 @@ import requests
 from bs4 import BeautifulSoup, Tag
 from jinja2 import Template
 from ua_clarity_api import ua_clarity_api
-import pdb
 
 
-__author__ = ("Stephen Stern, Archer Morgan, Rafael Lopez,",
+__author__ = (
+    "Stephen Stern, Archer Morgan, Rafael Lopez,",
     "Ryan Johannes-Bland, Etienne Thompson")
 __maintainer__ = "Ryan Johannes-Bland"
 __email__ = "rjjohannesbland@email.arizona.edu"

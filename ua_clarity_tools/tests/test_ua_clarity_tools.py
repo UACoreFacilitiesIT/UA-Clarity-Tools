@@ -11,7 +11,6 @@ from jinja2 import Template
 from bs4 import BeautifulSoup
 from ua_clarity_tools import ua_clarity_tools
 from ua_clarity_tools import api_types
-import pdb
 
 
 CLARITY_TOOLS = None
@@ -328,7 +327,11 @@ class TestStepTools(unittest.TestCase):
         in_out_uris = self._harvest_art_uris("map")
 
         all_uris = list(in_out_uris.keys())
-        all_uris.extend(list(in_out_uris.values()))
+        for value in in_out_uris.values():
+            if type(value) == list:
+                all_uris.extend(value)
+            else:
+                all_uris.append(value)
 
         arts_soup = BeautifulSoup(self.step_tools.api.get(all_uris), "xml")
 
@@ -365,8 +368,6 @@ class TestStepTools(unittest.TestCase):
 
             assert out_arts[0].location == expected_output.find(
                 "location").find("value").text
-
-        assert True
 
     def test_get_artifact_map_uri_only_one_input_one_output(self):
         test_map = self.step_tools.get_artifact_map(uri_only=True)
