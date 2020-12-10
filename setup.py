@@ -23,6 +23,11 @@ setup(
         "API that interacts with Illumina's Clarity LIMS software at a higher"
         " level than requests."),
     install_requires=[
-        "ua-clarity-api"
+        "requests",
+        "bs4",
+        "jinja2",
+        "ua-clarity-api",
+        "nose",
+        "dataclasses",
     ]
 )

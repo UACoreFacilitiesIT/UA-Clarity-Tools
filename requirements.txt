@@ -3,3 +3,4 @@ bs4
 jinja2
 ua-clarity-api
 nose
+dataclasses
