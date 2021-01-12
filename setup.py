@@ -10,7 +10,7 @@ def readme(filename):
 
 setup(
     name="ua_clarity_tools",
-    version="1.1.2",
+    version="1.1.3",
     packages=find_packages(),
     author="Stephen Stern, Rafael Lopez, Ryan Johannes-Bland",
     author_email="sterns1@email.arizona.edu",
@@ -25,9 +25,10 @@ setup(
     install_requires=[
         "requests",
         "bs4",
+        "lxml",
         "jinja2",
         "ua-clarity-api",
         "nose",
         "dataclasses",
-    ]
+    ],
 )
