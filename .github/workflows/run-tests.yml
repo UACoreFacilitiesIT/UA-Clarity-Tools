@@ -34,7 +34,7 @@ jobs:
           pip install .
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install nose
-          echo '{"host": "${{ secrets.TEST_HOST }}", "username": "${{ secrets.TEST_USERNAME }}", "password": "${{ secrets.TEST_PASSWORD}}", "step_uri": "${{ secrets.TEST_STEP_URI }}"}' > ua_ilab_tools/tests/lims_dev_creds.json
+          echo '{"host": "${{ secrets.TEST_HOST }}", "username": "${{ secrets.TEST_USERNAME }}", "password": "${{ secrets.TEST_PASSWORD}}", "step_uri": "${{ secrets.TEST_STEP_URI }}"}' > ua_clarity_tools/tests/lims_dev_creds.json
       - name: Run Tests
         run: |
           cd ua_clarity_tools/tests
