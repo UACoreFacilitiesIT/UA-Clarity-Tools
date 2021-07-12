@@ -85,7 +85,7 @@ class ClarityTools():
         """
         self.api = ua_clarity_api.ClarityApi(host, username, password)
 
-    def get_samples(self, uris):
+    def get_samples(self, uris, prj_info=True):
         """Returns a list of Sample data classes with data populated from the
         get responses of given clarity sample URIs.
 
@@ -106,14 +106,15 @@ class ClarityTools():
             sample.date_received = sample_data.find("date-received").text
 
             # Find the project uri if the sample is not a control sample.
-            if sample_data.find("control-type"):
-                sample.project_uri = None
-                sample.project_name = None
+            if prj_info:
+                if sample_data.find("control-type"):
+                    sample.project_uri = None
+                    sample.project_name = None
 
-            else:
-                project = sample_data.find("project")
-                sample.project_uri = project["uri"]
-                project_uris.add(project["uri"])
+                else:
+                    project = sample_data.find("project")
+                    sample.project_uri = project["uri"]
+                    project_uris.add(project["uri"])
 
             # Find 0th-artifact tag and extract data.
             artifact = sample_data.find("artifact")
@@ -126,14 +127,16 @@ class ClarityTools():
             samples.append(sample)
 
         # Map the projects to their names.
-        projects_soup = BeautifulSoup(self.api.get(list(project_uris)), "xml")
-        project_uri_name = dict()
-        for soup in projects_soup.find_all("prj:project"):
-            project_uri_name[soup["uri"]] = soup.find("name").text.strip()
+        if prj_info:
+            projects_soup = BeautifulSoup(
+                self.api.get(list(project_uris)), "xml")
+            project_uri_name = dict()
+            for soup in projects_soup.find_all("prj:project"):
+                project_uri_name[soup["uri"]] = soup.find("name").text.strip()
 
-        # Assign project names to each sample.
-        for sample in samples:
-            sample.project_name = project_uri_name.get(sample.project_uri)
+            # Assign project names to each sample.
+            for sample in samples:
+                sample.project_name = project_uri_name.get(sample.project_uri)
 
         return samples
 
