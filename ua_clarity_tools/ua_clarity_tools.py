@@ -348,8 +348,8 @@ class StepTools():
         self.host = re.sub("v2/.*", "v2/", self.args.step_uri)
         self.api = ua_clarity_api.ClarityApi(
             self.host, self.args.username, self.args.password)
-        self.step_soup = BeautifulSoup(self.api.get(
-            f"{self.args.step_uri}/details"), "xml")
+        self.step_details = f"{self.args.step_uri}/details"
+        self.step_soup = BeautifulSoup(self.api.get(self.step_details), "xml")
 
     def setup_arguments(self):
         """Incorporate EPP arguments into your StepTools object.
