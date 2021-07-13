@@ -647,7 +647,7 @@ class StepTools():
         self.api.post(f"{self.api.host}artifacts/batch/update", update_xml)
 
     def get_artifacts_previous_step(
-            self, dest_step, stream, art_smp_uris, step_soup, results=dict()):
+            self, dest_step, stream, art_smp_uris, step_soup, results=None):
         """Return artifact uris mapped to ancestor artifacts from a target
             step.
 
@@ -681,6 +681,8 @@ class StepTools():
                 went through the step separately from its fellows, this
                 will not work.
         """
+        results = results or dict()
+
         try:
             step_name = step_soup.find("configuration").text
         except AttributeError:
