@@ -310,18 +310,22 @@ class ClarityTools():
         except requests.exceptions.HTTPError:
             raise RuntimeError(f"The post for \n\n{routing_xml}\n\n failed.")
 
-        # Check the queue for this stagename to make sure the artifacts were
-        # actually added to it if the queue is easily accessible (not a qc
-        # protocol step, as those all have different queues).
+        # Check that the artifact was queued (if not a qc protocol step, as those all have different queues).
         if qc_step is False and action == "assign":
-            queue_uri = f"{self.api.host}queues/{step_uri}"
-            queue_soup = BeautifulSoup(self.api.get(queue_uri), "xml")
-            queue_art_uris = [
-                soup["uri"] for soup in queue_soup.find_all("artifact")]
             for uri in artifact_uris:
                 file_uri = uri.split('/')[-1].startswith("92-")
-                if uri not in queue_art_uris and not file_uri:
-                    raise RuntimeError(f"The artifact: {uri} was not queued.")
+                if not file_uri:
+                    artifact_queued = False
+
+                    artifact_soup = BeautifulSoup(self.api.get(uri), "xml")
+                    workflow_stages = artifact_soup.find_all("workflow-stage")
+                    for workflow_stage in workflow_stages:
+                        if workflow_stage["name"] == dest_stage_name:
+                            if workflow_stage["status"] == "QUEUED":
+                                artifact_queued = True
+
+                    if not artifact_queued:
+                        raise RuntimeError(f"The artifact: {uri} was not queued.")
 
 
 class StepTools():

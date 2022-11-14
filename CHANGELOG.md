@@ -3,6 +3,10 @@
 All notable changes to this project can be found here.
 The format of this changelog is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### 2022/11/14 [1.1.5](https://github.com/UACoreFacilitiesIT/UA-Clarity-Tools)
+
+Updated the step router so it won't timeout when routing to steps with many queued samples.
+
 #### 2021/7/12 [1.1.4](https://github.com/UACoreFacilitiesIT/UA-Clarity-Tools)
 
 Added a command-line argument to get_samples to facilitate skipping project data.
