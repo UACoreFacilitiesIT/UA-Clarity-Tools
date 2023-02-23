@@ -651,7 +651,7 @@ class StepTools():
         self.api.post(f"{self.api.host}artifacts/batch/update", update_xml)
 
     def get_artifacts_previous_step(
-            self, dest_step, stream, art_smp_uris, step_soup, results=None):
+            self, dest_step, stream, art_smp_uris, step_soup, results=None, remaining_paths=1):
         """Return artifact uris mapped to ancestor artifacts from a target
             step.
 
@@ -665,6 +665,8 @@ class StepTools():
             step_soup: The step details soup for initial step.
             results (dict): The empty dict that will eventually be returned
                 with the desired artifacts from the dest_step.
+            remaining_paths (int): The number of routes left in the history to check for dest_step.
+                Only used to error if all routes are checked with no results.
 
         Returns:
             results (dict {str: Artifact}): The dictionary that
@@ -676,14 +678,6 @@ class StepTools():
         Exceptions:
             RuntimeError: If that target_step is not in any of the provided
                 art_uri histories.
-            RuntimeError: If there are targets that ran through the step at
-                two or more different times. (The dest_step process id is not
-                the same for all of the passed-in samples.)
-
-        Requirements:
-            The targets to reroute must all have the same endpoint; if a sample
-                went through the step separately from its fellows, this
-                will not work.
         """
         results = results or dict()
 
@@ -693,32 +687,38 @@ class StepTools():
             step_name = step_soup.find("type").text
 
         if step_name != dest_step:
+            remaining_paths -= 1
+
             # Harvest all of the input uri's of the current step.
             input_uris = [art["uri"].split(
                 '?')[0]for art in step_soup.find_all("input")]
             all_input_soup = BeautifulSoup(self.api.get(input_uris), "xml")
-
             try:
                 # Harvest all of the previous steps of the current step.
                 prev_steps = {
                     tag["uri"] for tag in all_input_soup.find_all(
                         "parent-process")}
 
-            # If there is no parent-process tag, the step isn't in at least
-            # one of the initial artifact's history.
+            # If there is no parent-process tag after running through the entire recursion tree,
+            # then the step isn't in at least one of the initial artifact's history.
             except AttributeError:
-                raise RuntimeError(
-                    f"The target_step is not in one or more of your "
-                    f"art_smp_uris histories. The earliest step is "
-                    f"{step_name}")
+                if remaining_paths == 0:
+                    raise RuntimeError(
+                        f"The target_step is not in one or more of your "
+                        f"art_smp_uris histories. The earliest step is "
+                        f"{step_name}")
 
             # for every prev_step, you need to recurse (where all of the
             # stored result values are in results).
             else:
+                remaining_paths += len(prev_steps)
                 for step_uri in prev_steps:
                     step_soup = BeautifulSoup(self.api.get(step_uri), "xml")
-                    return self.get_artifacts_previous_step(
-                        dest_step, stream, art_smp_uris, step_soup, results)
+                    results.update(self.get_artifacts_previous_step(
+                        dest_step, stream, art_smp_uris, step_soup, results, remaining_paths))
+
+                    if (len(results) == 0): remaining_paths -= 1
+
 
         else:
             # Get all of the inputs or outputs as PreviousStepArtifacts.
@@ -759,13 +759,14 @@ class StepTools():
                 try:
                     results[initial_art_uri] = target_smp_arts[initial_smp_uri]
                 except KeyError:
-                    raise RuntimeError(
-                        f"The artifact {initial_art_uri} did not run at the"
-                        f" same time as the other samples passed in.")
+                    # The artifact did not pass through this instance of the step,
+                    # but it may have gone through the step somewhere else in the recursion tree
+                    pass
 
             # Add the PerAllInputs ResultFiles to the results with the key
             # of 'shared'.
             for art in target_arts:
                 if art.art_type == "ResultFile":
                     results.setdefault("shared", []).append(art)
-            return results
+
+        return results
