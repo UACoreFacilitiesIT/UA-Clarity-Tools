@@ -3,6 +3,10 @@
 All notable changes to this project can be found here.
 The format of this changelog is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+### 2022/02/23 [1.1.8](https://github.com/UACoreFacilitiesIT/UA-Clarity-Tools)
+
+Updated the "get_artifacts_previous_step()" method so that it can handle input samples that traveled through the previous step at different times (different process ids). The function will now travel down all the paths in the step history, not just the first path.
+
 ### 2022/11/14 [1.1.7](https://github.com/UACoreFacilitiesIT/UA-Clarity-Tools)
 
 Updated the step router so it won't timeout when routing to steps with many queued samples.
