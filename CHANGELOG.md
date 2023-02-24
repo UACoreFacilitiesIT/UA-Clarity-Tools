@@ -5,7 +5,7 @@ The format of this changelog is based on [Keep a Changelog](https://keepachangel
 
 ### 2022/02/23 [1.1.8](https://github.com/UACoreFacilitiesIT/UA-Clarity-Tools)
 
-Updated the "get_artifacts_previous_step()" method so that it can handle input samples that traveled through the previous step at different times (different process ids). The function will know travel down all the paths in the step history, not just the first path.
+Updated the "get_artifacts_previous_step()" method so that it can handle input samples that traveled through the previous step at different times (different process ids). The function will now travel down all the paths in the step history, not just the first path.
 
 ### 2022/11/14 [1.1.7](https://github.com/UACoreFacilitiesIT/UA-Clarity-Tools)
 
