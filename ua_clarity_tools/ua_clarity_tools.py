@@ -2,6 +2,7 @@
 import os
 import re
 import argparse
+import logging
 from dataclasses import dataclass, field, astuple
 from collections import namedtuple
 import requests
@@ -16,7 +17,7 @@ __author__ = (
 __maintainer__ = "Ryan Johannes-Bland"
 __email__ = "rjjohannesbland@email.arizona.edu"
 
-
+LOGGER = logging.getLogger(f"__main__.{__name__}")
 class ClarityExceptions:
     """Holds custom Clarity Exceptions."""
     class TechnicianError(Exception):
@@ -28,10 +29,14 @@ class ClarityExceptions:
     class CallError(Exception):
         """This method call wasn't well-formed."""
 
+    class POSTNameCollision(Exception):
+        """You tried to POST something with a name that is already in Clarity."""
+
+    class POSTException(Exception):
+        """The POST failed."""
 
 PreviousStepArtifact = namedtuple(
     "PreviousStepArtifact", ["uri", "art_type", "generation_type"])
-
 
 @dataclass
 class Sample:
@@ -327,446 +332,434 @@ class ClarityTools():
                     if not artifact_queued:
                         raise RuntimeError(f"The artifact: {uri} was not queued.")
 
-
-class StepTools():
-    """Defines step specific methods which act upon a given step uri in
-        Clarity. This class can be instantiated directly or from a Clarity EPP
-        script.
-    """
-
-    def __init__(self, username=None, password=None, step_uri=None):
-        """Initialize LimsTools with information to access step details.
-
-        username and password should be strings representing your creds in the
-            clarity environment.
-        step_uri should be a string representing the step endpoint in your
-            clarity environment that you wish to perform work on.
-        """
-        if username and password and step_uri:
-            UserData = namedtuple(
-                "UserData", ["username", "password", "step_uri"])
-            self.args = UserData(username, password, step_uri)
-        else:
-            self.args = self.setup_arguments()
-
-        self.host = re.sub("v2/.*", "v2/", self.args.step_uri)
-        self.api = ua_clarity_api.ClarityApi(
-            self.host, self.args.username, self.args.password)
-        self.step_details = f"{self.args.step_uri}/details"
-        self.step_soup = BeautifulSoup(self.api.get(self.step_details), "xml")
-
-    def setup_arguments(self):
-        """Incorporate EPP arguments into your StepTools object.
-
-        Returns:
-            (arguments): The object that holds all of the arguments that
-                were parsed (at object.{dest}).
-        """
-        parser = argparse.ArgumentParser()
-        parser.add_argument(
-            "-u", dest="username", required=True)
-        parser.add_argument(
-            "-p", dest="password", required=True)
-        parser.add_argument(
-            "-s", dest="step_uri", required=True)
-        parser.add_argument(
-            "-r", dest="input_files", nargs='+')
-        parser.add_argument(
-            "-o", dest="output_files", nargs='+')
-        parser.add_argument(
-            "--log", dest="log")
-        parser.add_argument(
-            "nargs", nargs=argparse.REMAINDER)
-
-        return parser.parse_args()
-
-    def get_artifacts(self, stream, uri_only=False, container_info=False):
-        """Return the artifact information as a list of Artifact data classes.
+    def get_researcher_uri(self, res):
+        """Get the uri's of all researchers in Clarity with the given name.
 
         Arguments:
-            stream (str): The source of the samples, either "input" or
-                "output".
+            res (dataclass):
+                A dataclass called Researcher defined in api_types, with the
+                fields: "first_name", "last_name", "lab_type", "email", and
+                "uri", where all of these are strings and lab_type is either
+                'internal' or 'external'.
 
         Returns:
-            artifacts (list): Returns a list of Artifact data classes.
+            res_uris (list of strings):
+                A list that of all the uris with names
+                that match the given res.first_name and res.last_name, case
+                insensitive.
 
         Notes:
-            Does not include 'PerAllInputs' shared output files.
+            The onus of responsibility for checking the size of this list is
+                on the caller.
+        """
+        parameters = {"firstname": res.first_name, "lastname": res.last_name}
+        res_soup = BeautifulSoup(self.api.get(
+            "researchers", parameters=parameters), "xml")
+
+        res_uris = list()
+        for researcher in res_soup.find_all("researcher"):
+            res_uris.append(researcher["uri"])
+
+        return res_uris
+
+    def post_researcher(self, res):
+        """Add a new researcher to Clarity.
+
+        Arguments:
+            res (dataclass):
+                A dataclass called Researcher defined in api_types, with the
+                fields: "first_name", "last_name", "lab_type", "email", and
+                "uri", where all of these are strings and lab_type is either
+                'internal' or 'external'.
+
+        Returns:
+            (string):
+                The uri of the newly posted researcher.
+
+        Side Effects:
+            If successful, this function will post the researcher to the
+                Clarity REST DB.
+
+        Raises:
+            POSTNameCollision
+            POSTException
+        """
+        # Check for collision.
+        current_uri = self.get_researcher_uri(res)
+        if current_uri != []:
+            raise ClarityExceptions.POSTNameCollision(
+                "There is already a researcher with that name. Choose a"
+                " different one and try again.")
+
+        # Hardcoded for the default Administrative Lab.
+        lab_uri = f"{self.api.host}labs/1"
+
+        # Build and submit the xml request. Pass in the directory that this
+        # module is in, by finding the folder relative to the __file__
+        # attribute of this module.
+        research_template_path = os.path.join(
+            os.path.split(__file__)[0],
+            "post_researcher_template.xml")
+
+        with open(research_template_path, 'r') as file:
+            template = Template(file.read())
+            res_xml = template.render(
+                first_name=res.first_name,
+                last_name=res.last_name,
+                lab_uri=lab_uri,
+                email=res.email)
+
+        res_post = self.api.post("researchers", res_xml)
+
+        res_post_soup = BeautifulSoup(res_post, "xml")
+        new_researcher_uri = res_post_soup.find("res:researcher")["uri"]
+        return new_researcher_uri
+
+    def post_project(self, prj_info):
+        """Add a new project to Clarity.
+        Arguments:
+            prj_info (dataclass):
+                A dataclass called Project, defined in api_types, with the
+                fields: "name", "res", "open_date", "files", "uri", where all
+                of these are strings.
+
+        Returns:
+            (string):
+                The uri of the posted project.
+
+        Side Effects:
+            If successful, this function will post the project to the
+                Clarity REST DB.
+
+        Raises:
+            POSTNameCollision
+            POSTException
+        """
+        # Get will return xml, but only have the project tag if a project was
+        # found.
+        prjs_soup = BeautifulSoup(self.api.get(
+            "projects", parameters={"name": prj_info.name}), "xml")
+        if prjs_soup.find("project"):
+            raise(ClarityExceptions.POSTNameCollision(
+                "There is already a project with that name. Choose a"
+                " different one and try again."))
+
+        # Build and submit the xml request.
+        project_template_path = os.path.join(
+            os.path.split(__file__)[0],
+            "post_project_template.xml")
+
+        with open(project_template_path, 'r') as file:
+            template = Template(file.read())
+            project_xml = template.render(
+                name=prj_info.name,
+                open_date=prj_info.open_date,
+                researcher_uri=prj_info.res.uri)
+
+        prj_post = self.api.post("projects", project_xml)
+
+        prj_post_soup = BeautifulSoup(prj_post, "xml")
+        new_project_uri = prj_post_soup.find("prj:project")["uri"]
+        return new_project_uri
+
+    def batch_post_containers(self, samples, prj_name):
+        """Add new containers to Clarity.
+
+        Arguments:
+            samples (list of samples): The samples that contain a
+                fully-formed Container in their .con value, where fully-formed
+                here means having a con.name and con.con_type.
+            prj_name (string): The name of the project where the samples in
+                these containers are going to be posted.
+
+        Returns:
+            list_art_uris (list of  strings): The uri's of the containers that
+                were just created.
+
+        Side Effects:
+            If successful, this function will post all of the containers in
+                to the Clarity REST DB.
+
+        Raises:
+            POSTException
+        """
+        parameters = {"name": {sample.con.name for sample in samples}}
+        exist_con_soup = BeautifulSoup(self.api.get(
+            "containers", parameters=parameters), "xml")
+        found_cons = [con.name for con in exist_con_soup.find_all("container")]
+
+        container_types_soup = BeautifulSoup(
+            self.api.get("containertypes"), "xml")
+        contypes_uris = dict()
+        for con_type in container_types_soup.find_all("container-type"):
+            contypes_uris[con_type["name"]] = con_type["uri"]
+
+        # Renaming container name if container name exists.
+        con_post_collisions = set()
+        for sample in samples:
+            if sample.con.name in found_cons:
+                con_post_collisions.add(sample.con.name)
+                sample.con.name = f"{sample.con.name}-{prj_name}"
+
+            # Check that the container type has been implemented.
+            if sample.con.con_type in contypes_uris.keys():
+                sample.con.con_type_uri = contypes_uris[sample.con.con_type]
+            else:
+                raise NotImplementedError(
+                    f"The container type '{sample.con.con_type}' does not"
+                    f" exist in this Clarity environment.")
+
+        # Warn of any collisions.
+        if con_post_collisions:
+            LOGGER.warning({
+                "template": os.path.join("general", "warning.html"),
+                "content": (
+                    f"The containers: {con_post_collisions} have the same name"
+                    f" as another container in Clarity. These containers have"
+                    f" been added to Clarity with their prj_names appended to"
+                    f" their names.")
+            })
+
+        # Constructing various paths for use.
+        con_template_path = os.path.join(
+            os.path.split(__file__)[0], "post_containers_template.xml")
+        batch_con_template_path = os.path.join(
+            os.path.split(__file__)[0], "post_containers_batch_template.xml")
+
+        # Constructing the xml objects for each artifact.
+        con_xmls = list()
+        con_infos = {
+            (sample.con.name, sample.con.con_type_uri) for sample in samples}
+        for name, uri in con_infos:
+            with open(con_template_path, 'r') as file:
+                template = Template(file.read())
+                con_xml = template.render(con_name=name, con_type_uri=uri)
+            con_xmls.append(con_xml)
+
+        # Build the list that will be rendered by the Jinja template.
+        with open(batch_con_template_path, 'r') as file:
+            template = Template(file.read())
+            container_xml = template.render(con_list='\n'.join(con_xmls))
+
+        # Attempt to post.
+        con_post = self.api.post(
+            "containers/batch/create", container_xml)
+
+        # Get return info out of post.
+        con_post_soup = BeautifulSoup(con_post, "xml")
+        new_container_uris = [
+            link["uri"] for link in con_post_soup.find_all("link")]
+
+        # Check that the uris are gettable.
+        BeautifulSoup(self.api.get(new_container_uris), "xml")
+
+        return new_container_uris
+
+    def batch_post_samples(self, samples, prj_info):
+        """Add samples to a project in Clarity.
+
+        Arguments:
+            samples (list of samples):
+                Sample is a class defined in data_types. These objects must
+                have the requisite info to post a sample: a container_uri,
+                location, name, and a udf name: udf value dictionary.
+            prj_info (dataclass):
+                A dataclass called Project,  with the fields: "name", "res",
+                "open_date", "files", "uri", where all of these are strings.
+
+        Returns:
+            (list of strings):
+                The uri's of the samples that were just created.
+
+        Side Effects:
+            If successful, this function will post all of the samples in
+                samples to the Clarity REST DB.
+
+        Raises:
+            requests.exceptions.HTTPError
         """
 
-        art_uris = list()
+        sample_template_path = os.path.join(
+            os.path.split(__file__)[0], "post_samples_template.xml")
+        batch_sample_template_path = os.path.join(
+            os.path.split(__file__)[0], "post_samples_batch_template.xml")
+        sample_xmls = list()
 
-        # Get URI for target artifacts.
-        for iomap in self.step_soup.find_all("input-output-map"):
-            target = iomap.find(stream)
-            # If there are no {stream}s, skip this iomap soup.
-            if target is None:
-                continue
-            # Only add perInput output uri's.
-            if stream == "output":
-                if target["output-generation-type"] == "PerInput":
-                    art_uris.append(target["uri"])
-            # Add input uri's.
-            else:
-                art_uris.append(target["uri"])
+        # Construct each of the sample xml objects.
+        for sample in samples:
+            with open(sample_template_path, 'r') as file:
+                template = Template(file.read())
+                smp_xml = template.render(
+                    name=sample.name,
+                    prj_limsid=prj_info.uri.split('/')[-1],
+                    prj_uri=prj_info.uri,
+                    con_uri=sample.con.uri,
+                    location=sample.location,
+                    udf_dict=sample.udf_to_value)
+            smp_xml = smp_xml.replace('&', "&amp;")
+            sample_xmls.append(smp_xml)
 
-        if art_uris:
-            batch_artifacts = BeautifulSoup(self.api.get(art_uris), "xml")
-        else:
-            return art_uris
+        # Compile all of the sample xmls into a batch sample xml object.
+        with open(batch_sample_template_path, 'r') as file:
+            template = Template(file.read())
+            batch_xml = template.render(
+                samples='\n'.join(sample_xmls))
 
-        # Store all artifact data.
-        artifacts = list()
-        con_uris = set()
-        for artifact_data in batch_artifacts.find_all("artifact"):
+        # If the sample has a UDF that is unknown to Clarity, remove it from
+        # the xml for all samples, and try to post again.
+            valid_udfs = self.get_udfs("Sample")
+            batch_soup = BeautifulSoup(batch_xml, "xml")
+            for udf_tag in batch_soup.find_all("udf:field"):
+                if udf_tag["name"] not in valid_udfs:
+                    udf_tag.decompose()
+
+        response = self.api.post("samples/batch/create", batch_soup)
+        samples_post_soup = BeautifulSoup(response, "xml")
+
+        sample_uris = [x["uri"] for x in samples_post_soup.find_all("link")]
+
+        # Add adapter info to sample's artifacts in Clarity if provided.
+        if [sample.adapter for sample in samples if sample.adapter]:
+            # Map created artifacts to samples, as I am not comfortable relying
+            # on the sample_uri links being in the same order as samples.
+            smp_art_uris = self.get_arts_from_samples(sample_uris)
+            arts_soup = BeautifulSoup(
+                self.api.get(list(smp_art_uris.values())), "xml")
+
+            art_limsid_label = dict()
+            for art in arts_soup.find_all("art:artifact"):
+                for sample in samples:
+                    # If location and con_uri are ==, they map to each other.
+                    if (art.find("container")["uri"] == sample.con.uri
+                            and art.find("value").text == sample.location):
+                        art_limsid_label[art["limsid"]] = sample.adapter
+            self.set_reagent_label(art_limsid_label)
+
+        return sample_uris
+
+    def get_workflow(self, workflow_name):
+        """Return the active workflow soup for a workflow name."""
+        workflow_response = self.api.get(
+            "configuration/workflows",
+            parameters={"name": workflow_name}
+        )
+        workflow_list_soup = BeautifulSoup(workflow_response, "xml")
+        workflow_tag = workflow_list_soup.find("workflow")
+
+        if not workflow_tag:
+            raise ClarityExceptions.CallError(
+                f"The workflow {workflow_name} does not exist."
+            )
+
+        if workflow_tag.get("status") != "ACTIVE":
+            raise ClarityExceptions.CallError(
+                f"The workflow {workflow_name} is not active."
+            )
+
+        workflow_soup = BeautifulSoup(self.api.get(workflow_tag["uri"]), "xml")
+        return workflow_soup
+
+
+    def get_stage(self, workflow_name, stage_name):
+        """Return the stage tag for a stage in a workflow."""
+        workflow_soup = self.get_workflow(workflow_name)
+        stage = workflow_soup.find("stage", attrs={"name": stage_name})
+
+        if not stage:
+            raise ClarityExceptions.CallError(
+                f"There is no {stage_name} stage in workflow {workflow_name}."
+            )
+
+        return stage
+
+
+    def get_stage_uri(self, workflow_name, stage_name):
+        """Return the URI for a stage in a workflow."""
+        return self.get_stage(workflow_name, stage_name)["uri"]
+
+
+    def get_queue_uri(self, workflow_name, stage_name):
+        """Return the queue URI for a workflow stage."""
+        stage_uri = self.get_stage_uri(workflow_name, stage_name)
+        stage_soup = BeautifulSoup(self.api.get(stage_uri), "xml")
+
+        queue = stage_soup.find("queue")
+        if queue:
+            return queue["uri"]
+
+        step = stage_soup.find("step")
+        if step and step.get("uri"):
+            step_soup = BeautifulSoup(self.api.get(step["uri"]), "xml")
+            queue = step_soup.find("queue")
+            if queue:
+                return queue["uri"]
+
+        raise ClarityExceptions.CallError(
+            f"Could not find queue for stage {stage_name} in workflow {workflow_name}."
+        )
+
+
+    def get_queued_artifacts(self, workflow_name, stage_name, uri_only=False):
+        """Return artifacts currently queued for a workflow stage."""
+        queue_uri = self.get_queue_uri(workflow_name, stage_name)
+        queue_soup = BeautifulSoup(self.api.get(queue_uri), "xml")
+
+        artifact_uris = []
+        for artifact in queue_soup.find_all("artifact"):
+            artifact_uris.append(artifact["uri"].split("?")[0])
+
+        if uri_only:
+            return artifact_uris
+
+        if not artifact_uris:
+            return []
+
+        artifacts_soup = BeautifulSoup(self.api.get(artifact_uris), "xml")
+        artifacts = []
+
+        for artifact_data in artifacts_soup.find_all("art:artifact"):
             artifact = Artifact()
             artifact.name = artifact_data.find("name").text
             artifact.uri = artifact_data["uri"].split("?")[0]
             artifact.art_type = artifact_data.find("type").text
             artifact.sample_uri = artifact_data.find("sample")["uri"]
 
+            container = artifact_data.find("container")
+            if container:
+                artifact.container_uri = container["uri"]
+
+            location = artifact_data.find("location")
+            if location:
+                value = location.find("value")
+                if value:
+                    artifact.location = value.text
+
+            parent_process = artifact_data.find("parent-process")
+            if parent_process:
+                artifact.parent_process = parent_process["uri"]
+
             reagent_label = artifact_data.find("reagent-label")
             if reagent_label:
                 artifact.reagent_label = reagent_label["name"]
 
-            # If the artifact has no location or container, set as None.
-            artifact.container_uri = artifact_data.find("container")
-            artifact.location = artifact_data.find("location")
-            if artifact.location:
-                artifact.location = artifact_data.location.find("value").text
-
-            if artifact.container_uri:
-                con_uris.add(artifact.container_uri["uri"])
-                artifact.container_uri = artifact.container_uri["uri"]
-
-            # Find Parent Process.
-            parent_process = artifact_data.find("parent-process")
-            if parent_process:
-                parent_process = parent_process["uri"]
-
-            # Construct UDF Map.
             for udf_data in artifact_data.find_all("udf:field"):
                 artifact.udf[udf_data["name"]] = udf_data.text
 
-            # Add link only.
-            if uri_only:
-                artifacts.append(artifact.uri)
-            # Store all artifact data.
-            else:
-                artifacts.append(artifact)
-
-        # Setting the Artifact's con info if desired, by using a batch get.
-        ConInfo = namedtuple("ConInfo", ["name", "con_type"])
-        con_uri_info = dict()
-        if not uri_only and container_info and con_uris:
-            con_soups = BeautifulSoup(self.api.get(list(con_uris)), "xml")
-            for soup in con_soups.find_all("con:container"):
-                con_uri_info[soup["uri"]] = ConInfo(
-                    soup.find("name").text, soup.find("type")["name"])
-
-            for art in artifacts:
-                art.container_name = con_uri_info.get(art.container_uri).name
-                art.container_type = con_uri_info.get(
-                    art.container_uri).con_type
+            artifacts.append(artifact)
 
         return artifacts
 
-    def get_process_data(self):
-        """Retrieves Process data for the current step, including technician,
-            uri, and udfs.
 
-        Returns:
-            process: a Process dataclass representing the process of the
-                current step.
-        """
-        step_limsid = self.args.step_uri.split("/")[-1]
-        process_uri = (f"{self.api.host}processes/{step_limsid}")
+    def filter_artifacts_by_samples(self, artifacts, sample_uris, uri_only=False):
+        """Filter artifacts to only artifacts whose sample URI is in sample_uris."""
+        sample_uri_set = set(sample_uris)
 
-        # Get Process URI to extract data.
-        soup = BeautifulSoup(self.api.get(process_uri), "xml")
+        filtered = [
+            artifact for artifact in artifacts
+            if artifact.sample_uri in sample_uri_set
+        ]
 
-        # Construct Process data class.
-        process = Process()
-        process.uri = process_uri
-        first_name = soup.find("first-name").text.strip()
-        last_name = soup.find("last-name").text.strip()
-        process.technician = f"{first_name} {last_name}"
+        if uri_only:
+            return [artifact.uri for artifact in filtered]
 
-        # Extract all UDF names and values.
-        for udf_data in soup.find_all("udf:field"):
-            process.udf[udf_data["name"]] = udf_data.text
-
-        return process
-
-    def get_artifact_map(self, uri_only=False, container_info=False):
-        """Returns a map of input artifacts to output artifacts, either as uris
-            or as Artifact dataclasses. One input artifact can be mapped to a
-            list of their multiple output artifacts.
-
-        Arguments:
-            uri_only (boolean): This denotes whether to harvest this mapping as
-                uris or as namedtuples.
-
-        Returns:
-            artifact_map (dict {input artifact: [output_artifact]}):
-                Returns a dict of input artifact : all output artifacts.
-        """
-        if not uri_only:
-            # Make a dict with input_uri: input_artifact.
-            input_uri_art = {
-                art.uri: art for art in self.get_artifacts("input")}
-            # Make a dict with output_uri: output_artifact.
-            output_uri_art = {
-                art.uri: art for art in self.get_artifacts("output")}
-
-        # The container_name and container_type fields will always be None,
-        # because it is not always necessary. They exist so that
-        # the data_class can be run through the 'astuple' method.
-        Hashable_Artifact = namedtuple("HashableArtifact", [
-            "name",
-            "uri",
-            "art_type",
-            "sample_uri",
-            "container_uri",
-            "container_name",
-            "container_type",
-            "location",
-            "parent_process",
-            "reagent_label"
-        ])
-
-        artifact_map = dict()
-        for io_map in self.step_soup.find_all("input-output-map"):
-            output_soup = io_map.find("output")
-            if output_soup["output-generation-type"] == "PerInput":
-                input_uri = io_map.find("input")["uri"]
-                output_uri = output_soup["uri"]
-
-                if uri_only and not container_info:
-                    artifact_map.setdefault(input_uri, list())
-                    artifact_map[input_uri].append(output_uri)
-
-                else:
-                    if container_info:
-                        input_con_soup = BeautifulSoup(
-                            self.api.get(
-                                input_uri_art[input_uri].container_uri),
-                            "xml")
-                        input_con_name = input_con_soup.find("name").text
-                        input_con_type = input_con_soup.find("type")["name"]
-                        input_uri_art[
-                            input_uri].container_name = input_con_name
-                        input_uri_art[
-                            input_uri].container_type = input_con_type
-
-                        output_con_soup = BeautifulSoup(
-                            self.api.get(
-                                output_uri_art[output_uri].container_uri),
-                            "xml")
-                        output_con_name = output_con_soup.find("name").text
-                        output_con_type = output_con_soup.find("type")["name"]
-                        output_uri_art[
-                            output_uri].container_name = output_con_name
-                        output_uri_art[
-                            output_uri].container_type = output_con_type
-
-                    # Convert to hashable namedtuples excluding the UDF map.
-                    input_art = Hashable_Artifact(
-                        *(astuple(input_uri_art[input_uri])[:-1]))
-                    output_art = Hashable_Artifact(
-                        *(astuple(output_uri_art[output_uri])[:-1]))
-
-                    artifact_map.setdefault(input_art, list())
-                    artifact_map[input_art].append(output_art)
-
-        return artifact_map
-
-    def set_artifact_udf(self, sample_values, stream):
-        """Set UDF values for analytes in the current step based on given
-            mapping.
-
-        Arguments:
-            sample_values (dict {str: [namedtuple]}): Maps sample limsid's to
-                a list of namedtuples called 'UDF' with the fields 'name',
-                'value'.
-
-            stream (str): The source of the samples, either "input" or
-                "output".
-
-        Side Effects:
-            Sets the samples' UDFs that were passed into the REST database.
-                Overwrites the value that was in that UDF if it existed.
-
-        Raises:
-            RuntimeError: If there was an exception raised while POSTing.
-
-        Requirements:
-            The UDF Value's type must be in line with Clarity's
-                initialization of that type.
-        """
-        art_uris = list()
-        for iomap in self.step_soup.find_all("input-output-map"):
-            art_soup = iomap.find(stream)
-            art_uris.append(art_soup["uri"])
-
-        art_soups = BeautifulSoup(self.api.get(art_uris), "xml")
-        art_queue = list()
-
-        for art in art_soups.find_all("art:artifact"):
-            if art["limsid"] in sample_values:
-                udfs = sample_values[art["limsid"]]
-                for udf in udfs:
-                    target_udf = art.find(attrs={"name": udf.name})
-                    # If the UDF exists as a value, replace it.
-                    if target_udf:
-                        target_udf.string = str(udf.value)
-                    # If it does not exist, find out the UDF type for Clarity.
-                    else:
-                        if isinstance(udf.value, bool):
-                            udf_type = "Boolean"
-                        elif (isinstance(udf.value, int)
-                                or isinstance(udf.value, float)):
-                            udf_type = "Numeric"
-                        else:
-                            udf_type = "String"
-
-                        # Build a new UDF tag and add it to the art:artifact.
-                        udf_tag = Tag(
-                            builder=art.builder,
-                            name="udf:field",
-                            attrs={"name": udf.name, "type": udf_type})
-
-                        udf_tag.string = str(udf.value)
-                        art.find("sample").insert_after(udf_tag)
-                # Build the list that will be rendered by the Jinja template.
-                art_queue.append(str(art))
-
-        # Use Jinja to create the batch update xml.
-        template_path = (os.path.join(
-            os.path.split(__file__)[0], "batch_artifact_update_template.xml"))
-        with open(template_path, "r") as file:
-            template = Template(file.read())
-            update_xml = template.render(artifacts=art_queue)
-
-        self.api.post(f"{self.api.host}artifacts/batch/update", update_xml)
-
-    def get_artifacts_previous_step(
-            self, dest_step, stream, art_smp_uris, step_soup, results=None, remaining_paths=1):
-        """Return artifact uris mapped to ancestor artifacts from a target
-            step.
-
-        Arguments:
-            dest_step (str): The name of the step where the ancestor
-                artifacts were created.
-            stream (str): The source of the samples, either "input" or
-                "output" in the dest_step.
-            art_smp_uris (dict {str: str}): A dict that maps smp_uris to
-                passed in art_uris.
-            step_soup: The step details soup for initial step.
-            results (dict): The empty dict that will eventually be returned
-                with the desired artifacts from the dest_step.
-            remaining_paths (int): The number of routes left in the history to check for dest_step.
-                Only used to error if all routes are checked with no results.
-
-        Returns:
-            results (dict {str: Artifact}): The dictionary that
-                maps the art_uri to the artifact namedtuple. All of the
-                'PerAllInputs' are stored in the results dict at
-                results['shared']. If the art_uri does not have ancestors at
-                that target, the art_uri will not be in the dictionary.
-
-        Exceptions:
-            RuntimeError: If that target_step is not in any of the provided
-                art_uri histories.
-        """
-        results = results or dict()
-
-        try:
-            step_name = step_soup.find("configuration").text
-        except AttributeError:
-            step_name = step_soup.find("type").text
-
-        if step_name != dest_step:
-            remaining_paths -= 1
-
-            # Harvest all of the input uri's of the current step.
-            input_uris = [art["uri"].split(
-                '?')[0]for art in step_soup.find_all("input")]
-            all_input_soup = BeautifulSoup(self.api.get(input_uris), "xml")
-            try:
-                # Harvest all of the previous steps of the current step.
-                prev_steps = {
-                    tag["uri"] for tag in all_input_soup.find_all(
-                        "parent-process")}
-
-            # If there is no parent-process tag after running through the entire recursion tree,
-            # then the step isn't in at least one of the initial artifact's history.
-            except AttributeError:
-                if remaining_paths == 0:
-                    raise RuntimeError(
-                        f"The target_step is not in one or more of your "
-                        f"art_smp_uris histories. The earliest step is "
-                        f"{step_name}")
-
-            # for every prev_step, you need to recurse (where all of the
-            # stored result values are in results).
-            else:
-                remaining_paths += len(prev_steps)
-                for step_uri in prev_steps:
-                    step_soup = BeautifulSoup(self.api.get(step_uri), "xml")
-                    results.update(self.get_artifacts_previous_step(
-                        dest_step, stream, art_smp_uris, step_soup, results, remaining_paths))
-
-                    if (len(results) == 0): remaining_paths -= 1
-
-
-        else:
-            # Get all of the inputs or outputs as PreviousStepArtifacts.
-            target_arts = list()
-            for iomap in step_soup.find_all("input-output-map"):
-                art_uri = iomap.find(stream)["uri"].split('?')[0]
-                out_art = iomap.find("output")
-                art_type = out_art["output-type"]
-                art_generation_type = out_art["output-generation-type"]
-
-                # Skip PerInput ResultFiles, because there is not a way to map
-                # them to the originally passed in artifacts (they don't have
-                # a sample tag to match).
-                if (art_generation_type == "PerInput"
-                        and art_type == "ResultFile"):
-                    continue
-
-                # Add Analytes and shared ResultFiles to be matched to its
-                # originally passed in analyte.
-                target_arts.append(PreviousStepArtifact(
-                    art_uri, art_type, art_generation_type))
-
-            target_art_uris = [art.uri for art in target_arts]
-            all_target_soup = BeautifulSoup(
-                self.api.get(target_art_uris), "xml")
-
-            target_smp_arts = dict()
-            # Map the input or output sample_uri : list of
-            # Previous_Step_Analytes.
-            for art in all_target_soup.find_all("art:artifact"):
-                for target_art in target_arts:
-                    if art["uri"].split('?')[0] == target_art.uri:
-                        target_smp_arts.setdefault(
-                            art.find("sample")["uri"], []).append(target_art)
-
-            # Add as a result the original uri: list of Artifacts.
-            for initial_art_uri, initial_smp_uri in art_smp_uris.items():
-                try:
-                    results[initial_art_uri] = target_smp_arts[initial_smp_uri]
-                except KeyError:
-                    # The artifact did not pass through this instance of the step,
-                    # but it may have gone through the step somewhere else in the recursion tree
-                    pass
-
-            # Add the PerAllInputs ResultFiles to the results with the key
-            # of 'shared'.
-            for art in target_arts:
-                if art.art_type == "ResultFile":
-                    results.setdefault("shared", []).append(art)
-
-        return results
+        return filtered

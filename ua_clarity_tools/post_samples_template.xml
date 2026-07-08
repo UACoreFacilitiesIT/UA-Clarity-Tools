@@ -1,0 +1,11 @@
+<smp:samplecreation xmlns:smp="http://genologics.com/ri/sample">
+    <name>{{ name }}</name>
+    <project limsid="{{ prj_limsid }}" uri="{{ prj_uri }}"></project>
+    <location>
+        <container uri="{{ con_uri }}"></container>
+        <value>{{ location }}</value>
+    </location>
+    {% for key, value in udf_dict.items() %}
+        <udf:field name="{{ key }}" type="String">{{ value }}</udf:field>
+    {% endfor %}
+</smp:samplecreation>

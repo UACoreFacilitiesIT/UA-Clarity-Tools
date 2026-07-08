@@ -1,0 +1,6 @@
+<res:researcher xmlns:udf="http://genologics.com/ri/userdefined" xmlns:ri="http://genologics.com/ri" xmlns:res="http://genologics.com/ri/researcher">
+    <first-name>{{ first_name }}</first-name>
+    <last-name>{{ last_name }}</last-name>
+    <lab uri="{{ lab_uri }}"/>
+    <email>{{ email }}</email>
+</res:researcher>

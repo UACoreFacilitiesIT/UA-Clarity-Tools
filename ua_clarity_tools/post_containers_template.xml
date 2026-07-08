@@ -1,0 +1,4 @@
+<con:container uri="http://localhost:8080/api/v2/containers">
+    <name>{{ con_name }}</name>
+    <type uri="{{ con_type_uri }}"/>
+</con:container>
