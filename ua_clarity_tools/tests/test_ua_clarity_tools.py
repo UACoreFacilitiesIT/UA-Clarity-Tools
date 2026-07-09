@@ -7,31 +7,82 @@ import random
 import json
 from collections import namedtuple
 from datetime import datetime
-
-# from nose.tools import raises
 from jinja2 import Template
 from bs4 import BeautifulSoup
 from ua_clarity_tools import ua_clarity_tools
 from ua_clarity_tools import api_types
+from ua_clarity_tools.step_tools import StepTools
 
-
+WORKFLOW_NAME = "Make Plate (96well)"
+STAGE_NAME = "Make Stock Plate"
+CONTAINER_TYPE = "96 well plate"
 CLARITY_TOOLS = None
+creds_path = os.path.join(os.path.split(__file__)[0], "lims_dev_creds.json")
+with open(creds_path, "r") as file:
+    contents = file.read()
 
+creds = json.loads(contents)
 
-def setUpModule():
-    creds_path = os.path.join(os.path.split(__file__)[0], "lims_dev_creds.json")
-    with open(creds_path, "r") as file:
-        contents = file.read()
+CLARITY_TOOLS = ua_clarity_tools.ClarityTools(
+    host=creds["host"], username=creds["username"], password=creds["password"]
+)
 
-    creds = json.loads(contents)
+def create_test_step():
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
-    global CLARITY_TOOLS
-
-    CLARITY_TOOLS = ua_clarity_tools.ClarityTools(
-        host=creds["host"], username=creds["username"], password=creds["password"]
+    researcher = api_types.Researcher(
+        first_name="System",
+        last_name="Administrator",
+        lab_type="internal",
+        email="",
+        uri=f"{CLARITY_TOOLS.api.host}researchers/1",
     )
 
+    project = api_types.Project(
+        name=f"Auto_Test_Project_{timestamp}",
+        res=researcher,
+        open_date=str(datetime.today().date()),
+    )
+    project.uri = CLARITY_TOOLS.post_project(project)
 
+    container = api_types.Container(
+        name=f"Auto_Test_Container_{timestamp}",
+        con_type=CONTAINER_TYPE,
+    )
+
+    samples = []
+    for i in range(1, 3):
+        sample = api_types.Sample(name=f"Auto_Test_Sample_{timestamp}_{i}")
+        sample.con = container
+        sample.location = f"A:{i}"
+        samples.append(sample)
+
+    container_uris = CLARITY_TOOLS.batch_post_containers(samples, project.name)
+    container.uri = container_uris[0]
+
+    for sample in samples:
+        sample.con.uri = container.uri
+
+    sample_uris = CLARITY_TOOLS.batch_post_samples(samples, project)
+    sample_to_artifact = CLARITY_TOOLS.get_arts_from_samples(sample_uris)
+    artifact_uris = list(sample_to_artifact.values())
+
+    CLARITY_TOOLS.step_router(
+        wf_name=WORKFLOW_NAME,
+        dest_stage_name=STAGE_NAME,
+        art_uris=artifact_uris,
+    )
+
+    step_uri = CLARITY_TOOLS.create_step_from_queue(
+        workflow_name=WORKFLOW_NAME,
+        stage_name=STAGE_NAME,
+        artifact_uris=artifact_uris,
+        container_type=CONTAINER_TYPE,
+    )
+
+    CLARITY_TOOLS.place_step_outputs(step_uri)
+
+    return step_uri
 class TestClarityTools(unittest.TestCase):
     def test_get_samples(self):
         sample_soups = BeautifulSoup(
@@ -122,11 +173,10 @@ class TestClarityTools(unittest.TestCase):
             workflow_name, stage_name, artifact_uris, action="unassign"
         )
 
-    @raises(ua_clarity_tools.ClarityExceptions.CallError)
     def test_step_router_wf_does_not_exist(self):
-        CLARITY_TOOLS.step_router("Doesn't exist", "", [])
+        with self.assertRaises(ua_clarity_tools.ClarityExceptions.CallError):
+            CLARITY_TOOLS.step_router("Doesn't exist", "", [])
 
-    @raises(ua_clarity_tools.ClarityExceptions.CallError)
     def test_step_router_step_does_not_exist(self):
         workflows_url = f"{CLARITY_TOOLS.api.host}configuration/workflows"
         workflows_soup = BeautifulSoup(CLARITY_TOOLS.api.get(workflows_url), "xml")
@@ -140,24 +190,18 @@ class TestClarityTools(unittest.TestCase):
                 stage_name = stage_soup["name"]
                 break
 
-        CLARITY_TOOLS.step_router(stage_name, "Doesn't exist", [])
-
+        with self.assertRaises(ua_clarity_tools.ClarityExceptions.CallError):
+            CLARITY_TOOLS.step_router(stage_name, "Doesn't exist", [])
 
 class TestStepTools(unittest.TestCase):
     def setUp(self):
-        creds_path = os.path.join(os.path.split(__file__)[0], "lims_dev_creds.json")
-        with open(creds_path, "r") as file:
-            contents = file.read()
+        step_uri = create_test_step()
 
-        creds = json.loads(contents)
-
-        # NOTE: For now, add a standard step type by hand in the web interface,
-        # then add that step uri to your creds file.
-        self.step_tools = ua_clarity_tools.StepTools(
-            creds["username"], creds["password"], creds["step_uri"]
+        self.step_tools = StepTools(
+            creds["username"],
+            creds["password"],
+            step_uri,
         )
-
-        # TODO: Programmatically create a step.
 
     def test_get_artifacts_input_stream(self):
         return_value = self.step_tools.get_artifacts("input")

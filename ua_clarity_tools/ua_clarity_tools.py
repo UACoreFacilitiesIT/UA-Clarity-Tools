@@ -132,7 +132,7 @@ class ClarityTools():
             samples.append(sample)
 
         # Map the projects to their names.
-        if prj_info:
+        if prj_info and project_uris:
             projects_soup = BeautifulSoup(
                 self.api.get(list(project_uris)), "xml")
             project_uri_name = dict()
@@ -672,11 +672,9 @@ class ClarityTools():
 
         return stage
 
-
     def get_stage_uri(self, workflow_name, stage_name):
         """Return the URI for a stage in a workflow."""
         return self.get_stage(workflow_name, stage_name)["uri"]
-
 
     def get_queue_uri(self, workflow_name, stage_name):
         """Return the queue URI for a workflow stage."""
@@ -697,7 +695,6 @@ class ClarityTools():
         raise ClarityExceptions.CallError(
             f"Could not find queue for stage {stage_name} in workflow {workflow_name}."
         )
-
 
     def get_queued_artifacts(self, workflow_name, stage_name, uri_only=False):
         """Return artifacts currently queued for a workflow stage."""
@@ -749,7 +746,6 @@ class ClarityTools():
 
         return artifacts
 
-
     def filter_artifacts_by_samples(self, artifacts, sample_uris, uri_only=False):
         """Filter artifacts to only artifacts whose sample URI is in sample_uris."""
         sample_uri_set = set(sample_uris)
@@ -763,3 +759,94 @@ class ClarityTools():
             return [artifact.uri for artifact in filtered]
 
         return filtered
+
+    def create_step_from_queue(self, workflow_name, stage_name, artifact_uris, container_type="96 well plate"):
+        """Start a step from queued artifacts and return the new step URI."""
+        stage = self.get_stage(workflow_name, stage_name)
+        stage_soup = BeautifulSoup(self.api.get(stage["uri"]), "xml")
+        step_config_uri = stage_soup.find("step")["uri"]
+
+        artifact_uris = [uri.split("?")[0] for uri in artifact_uris]
+
+        template_path = os.path.join(
+            os.path.split(__file__)[0],
+            "create_step_from_queue_template.xml"
+        )
+
+        with open(template_path, "r") as file:
+            template = Template(file.read())
+            step_xml = template.render(
+                step_config_uri=step_config_uri,
+                artifact_uris=artifact_uris,
+                container_type=container_type,
+            )
+
+        response = self.api.post("steps", step_xml)
+
+        step_soup = BeautifulSoup(response, "xml")
+        step = step_soup.find("stp:step") or step_soup.find("step")
+
+        if not step or not step.get("uri"):
+            raise ClarityExceptions.CallError(
+                f"Could not create step for stage {stage_name} in workflow {workflow_name}."
+            )
+
+        return step["uri"]
+
+    def place_step_outputs(self, step_uri):
+        """Place all output artifacts in the step into the output container."""
+
+        placements_uri = f"{step_uri}/placements"
+
+        placements_soup = BeautifulSoup(
+            self.api.get(placements_uri),
+            "xml",
+        )
+
+        configuration_uri = placements_soup.find("configuration")["uri"]
+        step_name = placements_soup.find("configuration").text.strip()
+        container_uri = placements_soup.find("container")["uri"]
+        container_limsid = container_uri.split("/")[-1]
+
+        placements = []
+
+        row = "A"
+        col = 1
+
+        for output in placements_soup.find_all("output-placement"):
+            placements.append({
+                "artifact_uri": output["uri"],
+                "location": f"{row}:{col}",
+            })
+            col += 1
+
+        template_path = os.path.join(
+            os.path.split(__file__)[0],
+            "post_step_placements_template.xml",
+        )
+
+        with open(template_path, "r") as file:
+            template = Template(file.read())
+            placement_xml = template.render(
+                placements_uri=placements_uri,
+                step_uri=step_uri,
+                configuration_uri=configuration_uri,
+                step_name=step_name,
+                container_uri=container_uri,
+                container_limsid=container_limsid,
+                placements=placements,
+            )
+
+        try:
+            self.api.post(placements_uri, placement_xml)
+        except requests.exceptions.HTTPError as e:
+            print("===== PLACEMENT XML SENT =====")
+            print(placement_xml)
+            print("==============================")
+
+            if e.response is not None:
+                print("===== RESPONSE =====")
+                print(e.response.text)
+                print("====================")
+
+            raise
