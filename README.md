@@ -45,11 +45,8 @@ pip install ua-lims-tools
 
 ## Tests
 
-bash
-pip install --update nose
-cd ./repo
-cd ./tests
-nosetests test_lims_tools.py
+From the root of the repo run:
+python -m unittest ua_clarity_tools.tests.test_ua_clarity_tools
 
 ## How to Use
 
