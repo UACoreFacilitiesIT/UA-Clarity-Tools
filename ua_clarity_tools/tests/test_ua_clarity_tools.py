@@ -16,73 +16,104 @@ from ua_clarity_tools.step_tools import StepTools
 WORKFLOW_NAME = "Make Plate (96well)"
 STAGE_NAME = "Make Stock Plate"
 CONTAINER_TYPE = "96 well plate"
-CLARITY_TOOLS = None
+
 creds_path = os.path.join(os.path.split(__file__)[0], "lims_dev_creds.json")
 with open(creds_path, "r") as file:
-    contents = file.read()
-
-creds = json.loads(contents)
+    creds = json.loads(file.read())
 
 CLARITY_TOOLS = ua_clarity_tools.ClarityTools(
-    host=creds["host"], username=creds["username"], password=creds["password"]
+    host=creds["host"],
+    username=creds["username"],
+    password=creds["password"],
 )
+class TestStepFactory:
+    """
+    Helper used to create a fully functional Clarity step for StepTools tests.
 
-def create_test_step():
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    The creation workflow exercises the following ClarityTools methods:
+        - post_project()
+        - batch_post_containers()
+        - batch_post_samples()
+        - step_router()
+        - create_step_from_queue()
+        - place_step_outputs()
 
-    researcher = api_types.Researcher(
-        first_name="System",
-        last_name="Administrator",
-        lab_type="internal",
-        email="",
-        uri=f"{CLARITY_TOOLS.api.host}researchers/1",
-    )
+    These methods are therefore integration-tested whenever a test step is
+    created.
+    """
+    def __init__(self, clarity_tools, creds):
+        self.clarity_tools = clarity_tools
+        self.creds = creds
 
-    project = api_types.Project(
-        name=f"Auto_Test_Project_{timestamp}",
-        res=researcher,
-        open_date=str(datetime.today().date()),
-    )
-    project.uri = CLARITY_TOOLS.post_project(project)
+    def create_step(self):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
 
-    container = api_types.Container(
-        name=f"Auto_Test_Container_{timestamp}",
-        con_type=CONTAINER_TYPE,
-    )
+        researcher = api_types.Researcher(
+            first_name="System",
+            last_name="Administrator",
+            lab_type="internal",
+            email="",
+            uri=f"{self.clarity_tools.api.host}researchers/1",
+        )
 
-    samples = []
-    for i in range(1, 3):
-        sample = api_types.Sample(name=f"Auto_Test_Sample_{timestamp}_{i}")
-        sample.con = container
-        sample.location = f"A:{i}"
-        samples.append(sample)
+        project = api_types.Project(
+            name=f"Auto_Test_Project_{timestamp}",
+            res=researcher,
+            open_date=str(datetime.today().date()),
+        )
+        project.uri = self.clarity_tools.post_project(project)
 
-    container_uris = CLARITY_TOOLS.batch_post_containers(samples, project.name)
-    container.uri = container_uris[0]
+        container = api_types.Container(
+            name=f"Auto_Test_Container_{timestamp}",
+            con_type=CONTAINER_TYPE,
+        )
 
-    for sample in samples:
-        sample.con.uri = container.uri
+        samples = []
+        for i in range(1, 3):
+            sample = api_types.Sample(name=f"Auto_Test_Sample_{timestamp}_{i}")
+            sample.con = container
+            sample.location = f"A:{i}"
+            samples.append(sample)
 
-    sample_uris = CLARITY_TOOLS.batch_post_samples(samples, project)
-    sample_to_artifact = CLARITY_TOOLS.get_arts_from_samples(sample_uris)
-    artifact_uris = list(sample_to_artifact.values())
+        container_uris = self.clarity_tools.batch_post_containers(
+            samples,
+            project.name,
+        )
+        container.uri = container_uris[0]
 
-    CLARITY_TOOLS.step_router(
-        wf_name=WORKFLOW_NAME,
-        dest_stage_name=STAGE_NAME,
-        art_uris=artifact_uris,
-    )
+        for sample in samples:
+            sample.con.uri = container.uri
 
-    step_uri = CLARITY_TOOLS.create_step_from_queue(
-        workflow_name=WORKFLOW_NAME,
-        stage_name=STAGE_NAME,
-        artifact_uris=artifact_uris,
-        container_type=CONTAINER_TYPE,
-    )
+        sample_uris = self.clarity_tools.batch_post_samples(samples, project)
+        artifact_uris = list(
+            self.clarity_tools.get_arts_from_samples(sample_uris).values()
+        )
 
-    CLARITY_TOOLS.place_step_outputs(step_uri)
+        self.clarity_tools.step_router(
+            wf_name=WORKFLOW_NAME,
+            dest_stage_name=STAGE_NAME,
+            art_uris=artifact_uris,
+        )
 
-    return step_uri
+        step_uri = self.clarity_tools.create_step_from_queue(
+            workflow_name=WORKFLOW_NAME,
+            stage_name=STAGE_NAME,
+            artifact_uris=artifact_uris,
+            container_type=CONTAINER_TYPE,
+        )
+
+        self.clarity_tools.place_step_outputs(step_uri)
+
+        return step_uri
+
+    def create_step_tools(self):
+        return StepTools(
+            self.creds["username"],
+            self.creds["password"],
+            self.create_step(),
+        )
+
+STEP_FACTORY = TestStepFactory(CLARITY_TOOLS, creds)
 class TestClarityTools(unittest.TestCase):
     def test_get_samples(self):
         sample_soups = BeautifulSoup(
@@ -111,8 +142,6 @@ class TestClarityTools(unittest.TestCase):
             assert CLARITY_TOOLS.api.host in uri
 
     def test_get_udfs(self):
-        # NOTE: To test this method, make sure you have at least 1 'Analyte'
-        # udf type in your environment.
         assert len(CLARITY_TOOLS.get_udfs("Analyte")) > 1
 
     def test_set_reagent_label_with_none_and_reagent(self):
@@ -193,15 +222,195 @@ class TestClarityTools(unittest.TestCase):
         with self.assertRaises(ua_clarity_tools.ClarityExceptions.CallError):
             CLARITY_TOOLS.step_router(stage_name, "Doesn't exist", [])
 
+    def test_get_researcher_uri(self):
+        researcher = api_types.Researcher(
+            first_name="System",
+            last_name="Administrator",
+            lab_type="internal",
+            email="",
+            uri="",
+        )
+
+        researcher_uris = CLARITY_TOOLS.get_researcher_uri(researcher)
+
+        self.assertGreater(len(researcher_uris), 0)
+
+        for researcher_uri in researcher_uris:
+            self.assertTrue(
+                researcher_uri.startswith(CLARITY_TOOLS.api.host)
+            )
+
+
+    def test_post_researcher(self):
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+
+        researcher = api_types.Researcher(
+            first_name="AutoTest",
+            last_name=f"Researcher{timestamp}",
+            lab_type="internal",
+            email=f"autotest{timestamp}@example.com",
+            uri="",
+        )
+
+        researcher_uri = CLARITY_TOOLS.post_researcher(researcher)
+
+        self.assertTrue(
+            researcher_uri.startswith(
+                f"{CLARITY_TOOLS.api.host}researchers/"
+            )
+        )
+
+        matching_uris = CLARITY_TOOLS.get_researcher_uri(researcher)
+
+        self.assertIn(researcher_uri, matching_uris)
+
+
+    def test_get_workflow(self):
+        workflow_soup = CLARITY_TOOLS.get_workflow(WORKFLOW_NAME)
+
+        workflow = (
+            workflow_soup.find("wkfcnf:workflow")
+            or workflow_soup.find("workflow")
+        )
+
+        self.assertIsNotNone(workflow)
+        self.assertEqual(workflow["name"], WORKFLOW_NAME)
+        self.assertGreater(len(workflow_soup.find_all("stage")), 0)
+
+
+    def test_get_workflow_does_not_exist(self):
+        with self.assertRaises(
+            ua_clarity_tools.ClarityExceptions.CallError
+        ):
+            CLARITY_TOOLS.get_workflow(
+                "Auto Test Workflow That Does Not Exist"
+            )
+
+
+    def test_get_stage(self):
+        stage = CLARITY_TOOLS.get_stage(
+            WORKFLOW_NAME,
+            STAGE_NAME,
+        )
+
+        self.assertIsNotNone(stage)
+        self.assertEqual(stage["name"], STAGE_NAME)
+        self.assertTrue(stage.get("uri"))
+
+
+    def test_get_stage_does_not_exist(self):
+        with self.assertRaises(
+            ua_clarity_tools.ClarityExceptions.CallError
+        ):
+            CLARITY_TOOLS.get_stage(
+                WORKFLOW_NAME,
+                "Auto Test Stage That Does Not Exist",
+            )
+
+
+    def test_get_stage_uri(self):
+        stage = CLARITY_TOOLS.get_stage(
+            WORKFLOW_NAME,
+            STAGE_NAME,
+        )
+
+        stage_uri = CLARITY_TOOLS.get_stage_uri(
+            WORKFLOW_NAME,
+            STAGE_NAME,
+        )
+
+        self.assertEqual(stage_uri, stage["uri"])
+        self.assertTrue(
+            stage_uri.startswith(
+                f"{CLARITY_TOOLS.api.host}configuration/workflows/"
+            )
+        )
+
+
+    def test_get_queue_uri(self):
+        # TODO: The current development workflow configuration does not expose
+        # a queue URI through either the workflow stage resource or protocol-step
+        # configuration resource. Implement once a usable queue endpoint is found.
+        pass
+
+
+    def test_get_queued_artifacts(self):
+        # TODO: This depends on get_queue_uri(), which cannot currently resolve
+        # a queue URI from the available development workflow configuration.
+        pass
+
+
+    def test_filter_artifacts_by_samples(self):
+        sample_uri_1 = f"{CLARITY_TOOLS.api.host}samples/TestSample1"
+        sample_uri_2 = f"{CLARITY_TOOLS.api.host}samples/TestSample2"
+
+        artifact_1 = ua_clarity_tools.Artifact(
+            uri=f"{CLARITY_TOOLS.api.host}artifacts/TestArtifact1",
+            sample_uri=sample_uri_1,
+        )
+
+        artifact_2 = ua_clarity_tools.Artifact(
+            uri=f"{CLARITY_TOOLS.api.host}artifacts/TestArtifact2",
+            sample_uri=sample_uri_2,
+        )
+
+        filtered_artifacts = (
+            CLARITY_TOOLS.filter_artifacts_by_samples(
+                artifacts=[artifact_1, artifact_2],
+                sample_uris=[sample_uri_1],
+            )
+        )
+
+        self.assertEqual(filtered_artifacts, [artifact_1])
+
+
+    def test_filter_artifacts_by_samples_uri_only(self):
+        sample_uri_1 = f"{CLARITY_TOOLS.api.host}samples/TestSample1"
+        sample_uri_2 = f"{CLARITY_TOOLS.api.host}samples/TestSample2"
+
+        artifact_1 = ua_clarity_tools.Artifact(
+            uri=f"{CLARITY_TOOLS.api.host}artifacts/TestArtifact1",
+            sample_uri=sample_uri_1,
+        )
+
+        artifact_2 = ua_clarity_tools.Artifact(
+            uri=f"{CLARITY_TOOLS.api.host}artifacts/TestArtifact2",
+            sample_uri=sample_uri_2,
+        )
+
+        filtered_artifact_uris = (
+            CLARITY_TOOLS.filter_artifacts_by_samples(
+                artifacts=[artifact_1, artifact_2],
+                sample_uris=[sample_uri_1],
+                uri_only=True,
+            )
+        )
+
+        self.assertEqual(
+            filtered_artifact_uris,
+            [artifact_1.uri],
+        )
+
+
+    def test_filter_artifacts_by_samples_no_matches(self):
+        artifact = ua_clarity_tools.Artifact(
+            uri=f"{CLARITY_TOOLS.api.host}artifacts/TestArtifact1",
+            sample_uri=f"{CLARITY_TOOLS.api.host}samples/TestSample1",
+        )
+
+        filtered_artifacts = (
+            CLARITY_TOOLS.filter_artifacts_by_samples(
+                artifacts=[artifact],
+                sample_uris=[
+                    f"{CLARITY_TOOLS.api.host}samples/DifferentSample"
+                ],
+            )
+        )
+
+        self.assertEqual(filtered_artifacts, [])
 class TestStepTools(unittest.TestCase):
     def setUp(self):
-        step_uri = create_test_step()
-
-        self.step_tools = StepTools(
-            creds["username"],
-            creds["password"],
-            step_uri,
-        )
+        self.step_tools = STEP_FACTORY.create_step_tools()
 
     def test_get_artifacts_input_stream(self):
         return_value = self.step_tools.get_artifacts("input")
