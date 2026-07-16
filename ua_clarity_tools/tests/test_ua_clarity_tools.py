@@ -13,6 +13,13 @@ from ua_clarity_tools import ua_clarity_tools
 from ua_clarity_tools import api_types
 from ua_clarity_tools.step_tools import StepTools
 
+# TODO: for the next time someone edits this repo
+# - Use setUpClass() to create one shared Clarity step for read-only StepTools tests.
+# - Keep tests that modify step data in a separate test class with a fresh step.
+# - Rename TestStepFactory to StepFactory since it is a helper, not a test case.
+# - Remove unused legacy helper methods and their related imports.
+# - Consider cleanup for generated projects, containers, samples, and steps.
+
 WORKFLOW_NAME = "Make Plate (96well)"
 STAGE_NAME = "Make Stock Plate"
 CONTAINER_TYPE = "96 well plate"
