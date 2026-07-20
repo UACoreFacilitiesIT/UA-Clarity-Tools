@@ -1,0 +1,17 @@
+<stp:placements xmlns:stp="http://genologics.com/ri/step" uri="{{ placements_uri }}">
+    <step rel="steps" uri="{{ step_uri }}"/>
+    <configuration uri="{{ configuration_uri }}">{{ step_name }}</configuration>
+    <selected-containers>
+        <container uri="{{ container_uri }}"/>
+    </selected-containers>
+    <output-placements>
+        {% for placement in placements %}
+        <output-placement uri="{{ placement.artifact_uri }}">
+            <location>
+                <container limsid="{{ container_limsid }}" uri="{{ container_uri }}"/>
+                <value>{{ placement.location }}</value>
+            </location>
+        </output-placement>
+        {% endfor %}
+    </output-placements>
+</stp:placements>

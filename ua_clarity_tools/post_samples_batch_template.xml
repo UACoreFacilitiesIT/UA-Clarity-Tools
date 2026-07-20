@@ -1,0 +1,3 @@
+<smp:details xmlns:ri="http://genologics.com/ri" xmlns:udf="http://genologics.com/ri/userdefined" xmlns:smp="http://genologics.com/ri/sample">
+    {{ samples }}
+</smp:details>

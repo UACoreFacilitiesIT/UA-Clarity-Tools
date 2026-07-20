@@ -1,0 +1,5 @@
+<prj:project xmlns:udf="http://genologics.com/ri/userdefined" xmlns:ri="http://genologics.com/ri" xmlns:file="http://genologics.com/ri/file" xmlns:prj="http://genologics.com/ri/project">
+    <name>{{ name }}</name>
+    <open-date>{{ open_date }}</open-date>
+    <researcher uri="{{ researcher_uri }}"/>
+</prj:project>

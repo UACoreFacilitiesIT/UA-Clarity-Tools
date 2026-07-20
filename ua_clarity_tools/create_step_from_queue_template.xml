@@ -1,0 +1,10 @@
+<stp:step-creation xmlns:stp="http://genologics.com/ri/step"
+                   xmlns:ri="http://genologics.com/ri">
+    <configuration uri="{{ step_config_uri }}"/>
+    <container-type>{{ container_type }}</container-type>
+    <inputs>
+        {% for artifact_uri in artifact_uris %}
+        <input uri="{{ artifact_uri }}"/>
+        {% endfor %}
+    </inputs>
+</stp:step-creation>

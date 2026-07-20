@@ -1,0 +1,3 @@
+<con:details xmlns:ri="http://genologics.com/ri" xmlns:udf="http://genologics.com/ri/userdefined" xmlns:file="http://genologics.com/ri/file" xmlns:art="http://genologics.com/ri/artifact" xmlns:con="http://genologics.com/ri/container">
+    {{ con_list }}
+</con:details>
